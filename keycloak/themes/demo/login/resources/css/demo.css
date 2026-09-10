@@ -1,0 +1,160 @@
+/* ---------------------------------------------------------------------------
+ * Custom look for the Keycloak login and registration pages.
+ *
+ * This file is the ONLY thing that differs from the stock Keycloak theme.
+ * Change the four colours below and the whole page rebrands.
+ *
+ * The class names come from the built-in theme's theme.properties
+ * (kcHtmlClass=login-pf, kcFormCardClass=card-pf, PatternFly 4 pf-c-* classes).
+ * Inspect the login page in DevTools to find more of them.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  --demo-brand: #2f6fed;
+  --demo-brand-dark: #1e4fbb;
+  --demo-ink: #16202f;
+  --demo-muted: #6b7280;
+}
+
+/* ---- page background ---------------------------------------------------- */
+
+.login-pf {
+  background: none;
+}
+
+.login-pf body {
+  background: radial-gradient(1100px 600px at 12% -10%, #35507f 0%, transparent 60%),
+              linear-gradient(160deg, #16202f 0%, #1d2c45 55%, #16202f 100%);
+  background-color: var(--demo-ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* ---- the realm name shown above the card -------------------------------- */
+
+#kc-header-wrapper {
+  padding: 2.2rem 1rem 1.4rem;
+  font-size: 1.55rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: #fff;
+  text-transform: none;
+}
+
+/* This block is rendered from the realm setting "displayNameHtml" in
+ * realm-export.json. The class name kc-logo-text is already used by the parent
+ * theme, which paints the Keycloak hexagon logo onto it as a background image
+ * and gives it a fixed size. Both have to be switched off here, or the stock
+ * logo sits on top of our text. */
+.kc-logo-text {
+  background-image: none !important;
+  width: auto;
+  height: auto;
+  margin: 0;
+}
+
+/* The parent theme hides this span with an ID-qualified rule, because in stock
+ * Keycloak the logo image stands in for the text. An ID beats a class in CSS
+ * specificity, so matching on #kc-header-wrapper here is what makes it win. */
+#kc-header-wrapper .kc-logo-text span {
+  display: block;
+  font-size: 1.55rem;
+  font-weight: 650;
+  color: #fff;
+}
+
+#kc-header-wrapper .kc-logo-text small {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: #9fb0c9;
+  letter-spacing: 0.02em;
+}
+
+/* ---- the white card ----------------------------------------------------- */
+
+.login-pf-page .card-pf {
+  border: none;
+  border-radius: 14px;
+  padding: 2rem 2.1rem 1.6rem;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.login-pf-page .login-pf-header h1 {
+  color: var(--demo-ink);
+  font-weight: 600;
+}
+
+/* ---- inputs ------------------------------------------------------------- */
+
+.pf-c-form-control {
+  height: 2.65rem;
+  border-radius: 8px;
+  border: 1px solid #cfd4dc;
+  font-size: 0.95rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.pf-c-form-control:focus {
+  border-color: var(--demo-brand);
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.18);
+  outline: none;
+}
+
+.pf-c-form__label-text {
+  font-weight: 600;
+  color: var(--demo-ink);
+}
+
+/* ---- buttons ------------------------------------------------------------ */
+
+.pf-c-button.pf-m-primary {
+  background: var(--demo-brand);
+  border-radius: 8px;
+  height: 2.7rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.pf-c-button.pf-m-primary:hover,
+.pf-c-button.pf-m-primary:focus {
+  background: var(--demo-brand-dark);
+}
+
+/* ---- links: "Forgot password?" and the sign-up line ---------------------- */
+
+#kc-registration a,
+#kc-registration-container a,
+#kc-form-options a,
+.login-pf-page a {
+  color: var(--demo-brand);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+#kc-registration a:hover,
+.login-pf-page a:hover {
+  text-decoration: underline;
+}
+
+/* The "New user? Register" line sits directly under the card. */
+#kc-registration,
+#kc-registration-container {
+  margin-top: 1.1rem;
+  text-align: center;
+  color: var(--demo-muted);
+}
+
+/* ---- a small footer note, injected purely with CSS ---------------------- */
+
+.login-pf-page:after {
+  content: "Local learning environment - development mode, not production";
+  display: block;
+  margin: 1.6rem auto 0;
+  text-align: center;
+  font-size: 0.78rem;
+  color: #7f90a8;
+}

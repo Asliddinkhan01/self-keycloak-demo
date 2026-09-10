@@ -1,0 +1,47 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: product-service
+
+  # ---------------------------------------------------------------------------
+  # Same PostgreSQL server as user-service, but a different schema and a
+  # different login. This role has no privileges on user_service.app_user, so
+  # a stray join across services fails in the database, not in code review.
+  # ---------------------------------------------------------------------------
+  datasource:
+    url: jdbc:postgresql://localhost:5442/appdb
+    username: product_service
+    password: product_service
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: product_service
+    open-in-view: false
+    show-sql: false
+
+  flyway:
+    enabled: true
+    schemas: product_service
+    default-schema: product_service
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Same issuer as user-service. Both services trust the same realm and
+          # therefore accept the same tokens. That is the whole point of a
+          # central identity provider in a microservice system.
+          issuer-uri: http://localhost:8180/realms/demo
+
+app:
+  cors:
+    allowed-origin: http://localhost:5173
+
+logging:
+  level:
+    org.springframework.security: DEBUG

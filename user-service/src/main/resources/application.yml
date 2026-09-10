@@ -1,0 +1,64 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: user-service
+
+  # ---------------------------------------------------------------------------
+  # Database. This service owns the "user_service" schema of the shared appdb
+  # and logs in as its own PostgreSQL role, which has no privileges anywhere
+  # else. Note the port: 5442 on the host, because 5432 is usually taken.
+  # ---------------------------------------------------------------------------
+  datasource:
+    url: jdbc:postgresql://localhost:5442/appdb
+    username: user_service
+    password: user_service
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema, so Hibernate must never change it. "validate"
+      # only checks that the entities and the migrated tables agree, and fails
+      # loudly at startup if they have drifted apart.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        # Every table in this service resolves to user_service.<table>.
+        default_schema: user_service
+    # Off by default in a REST service: it keeps a Hibernate session open for
+    # the whole request and hides lazy-loading mistakes.
+    open-in-view: false
+    # Set to true while learning to watch the SQL Hibernate generates.
+    show-sql: false
+
+  flyway:
+    enabled: true
+    schemas: user_service
+    default-schema: user_service
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # The single most important line of Keycloak configuration.
+          #
+          # Spring calls
+          #   http://localhost:8180/realms/demo/.well-known/openid-configuration
+          # reads "jwks_uri" out of the response, and downloads Keycloak's PUBLIC
+          # signing keys. Every incoming token is then verified locally against
+          # those keys, and its "iss" claim must equal the value below.
+          #
+          # The call is made lazily, on the first request rather than at startup,
+          # so a service whose Keycloak is unreachable starts fine and then
+          # answers 401 to everything. See "The bare-Bearer 401" in the README.
+          issuer-uri: http://localhost:8180/realms/demo
+
+app:
+  cors:
+    allowed-origin: http://localhost:5173
+
+logging:
+  level:
+    # Verbose, but while learning it shows exactly why a request was rejected:
+    # bad signature, wrong issuer, expired token, or a missing authority.
+    org.springframework.security: DEBUG

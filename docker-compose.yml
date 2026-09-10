@@ -1,0 +1,93 @@
+# ---------------------------------------------------------------------------
+# Infrastructure for the demo: PostgreSQL + Keycloak.
+#
+# The two Spring Boot services and the Vue app run directly on your machine
+# (see README) so you can debug them in IntelliJ.
+#
+# ONE PostgreSQL server holds everything, split into three SCHEMAS:
+#
+#     appdb
+#      ├── keycloak         owned by role "keycloak"        (users, realms, sessions)
+#      ├── user_service     owned by role "user_service"    (app_user)
+#      └── product_service  owned by role "product_service" (product)
+#
+# Each service logs in as its own role and can only reach its own schema.
+# See postgres/init/01-schemas.sql for the grants that enforce that.
+#
+# PORT NOTE: PostgreSQL is published on 5442, not the default 5432, and
+# Keycloak on 8180, not 8080. Both defaults are heavily contested on a typical
+# developer machine, and a port clash produces failures that are very hard to
+# read. Inside the Docker network the containers still use 5432 and 8080.
+# ---------------------------------------------------------------------------
+services:
+  postgres:
+    image: postgres:latest
+    container_name: demo-postgres
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5442:5432"
+    volumes:
+      # Scripts here run ONCE, when the data directory is first created.
+      # Editing them later has no effect until `docker compose down -v`.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      # Mounted on the PARENT directory, not on .../data.
+      #
+      # PostgreSQL 18 images changed the layout: data now lives in a
+      # major-version subdirectory such as /var/lib/postgresql/18/docker, and an
+      # 18 image refuses to start if it finds old-style data in .../data.
+      # Mounting the parent works for both 17 and 18, so the compose file is not
+      # tied to one major version.
+      #
+      # Either way, a volume created by one major version cannot be read by
+      # another. Changing the image tag across majors means `docker compose
+      # down -v` and starting fresh, which is safe here because everything is
+      # rebuilt from 01-schemas.sql, realm-export.json and the Flyway migrations.
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d appdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    container_name: keycloak
+    # start-dev = development mode: HTTP allowed, no hostname strictness, and
+    # theme caching disabled so edits to the custom login theme show up on a
+    # browser refresh. The DATABASE is now a real one, but the server itself is
+    # still in development mode. See "Development mode is not production".
+    command: ["start-dev", "--import-realm"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+
+      # ---- database -----------------------------------------------------
+      # Without these four lines Keycloak falls back to an embedded H2 file,
+      # which is the single biggest "do not do this in production" in a
+      # default Keycloak setup.
+      KC_DB: postgres
+      # "postgres" is the service name above; inside the Docker network it
+      # resolves to the container, on its INTERNAL port 5432.
+      KC_DB_URL: jdbc:postgresql://postgres:5432/appdb
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_DB_SCHEMA: keycloak
+
+      # Pin the public URL. This becomes the "iss" claim of every token and
+      # must match issuer-uri in both Spring services.
+      KC_HOSTNAME: http://localhost:8180
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+      - ./keycloak/themes:/opt/keycloak/themes:ro
+
+volumes:
+  postgres_data:
