@@ -1,0 +1,59 @@
+:root {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #16201f;
+  background: #f2f5f3;
+}
+
+body { margin: 0; padding: 1.75rem 1rem 4rem; }
+#app { max-width: 980px; margin: 0 auto; }
+
+h1 { font-size: 1.45rem; margin: 0 0 .35rem; }
+.sub { color: #5a6b66; margin: 0 0 1.5rem; font-size: .9rem; }
+
+h2 {
+  font-size: .75rem; text-transform: uppercase; letter-spacing: .08em;
+  color: #6b7a76; margin: 0 0 .8rem; font-weight: 600;
+}
+
+.card {
+  background: #fff; border: 1px solid #dce3e0; border-radius: 10px;
+  padding: 1rem 1.15rem; margin-bottom: 1rem;
+}
+
+button {
+  font: inherit; font-size: .875rem; padding: .42rem .8rem;
+  margin: 0 .4rem .4rem 0; border: 1px solid #c6cfcb; border-radius: 6px;
+  background: #fff; cursor: pointer;
+}
+button:hover:not(:disabled) { background: #eaf0ee; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.primary { background: #0b6b5f; border-color: #0b6b5f; color: #fff; }
+button.primary:hover:not(:disabled) { background: #095a50; }
+button.danger { border-color: #9e2f27; color: #9e2f27; }
+button.on { background: #0b6b5f; border-color: #0b6b5f; color: #fff; }
+
+input {
+  font: inherit; font-size: .875rem; padding: .4rem .6rem;
+  border: 1px solid #c6cfcb; border-radius: 6px; margin: 0 .4rem .4rem 0;
+}
+
+.badge {
+  display: inline-block; padding: .12rem .55rem; border-radius: 999px;
+  background: #dcede9; color: #06463e; font-size: .78rem; margin-right: .3rem;
+}
+.badge.admin { background: #f7e2df; color: #9e2f27; }
+.badge.perm { background: #f2f5f3; color: #5a6b66; border: 1px solid #dce3e0; }
+
+pre {
+  background: #12191b; color: #d7dee2; padding: .85rem; border-radius: 8px;
+  overflow-x: auto; font-size: .8rem; margin: 0;
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.status { font-weight: 600; margin-bottom: .5rem; font-size: .9rem; }
+.status.ok { color: #2c6a3f; }
+.status.err { color: #9e2f27; }
+
+.hint { color: #6b7a76; font-size: .82rem; margin: .3rem 0 .7rem; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: .85em; }

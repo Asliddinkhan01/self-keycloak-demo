@@ -3,6 +3,7 @@ package uz.platform.organizationservice.config;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
+import uz.platform.security.OrganizationSecurity;
 import uz.platform.security.PermissionSecurity;
 import uz.platform.security.ResourceServerSecurity;
 
@@ -17,6 +18,6 @@ import uz.platform.security.ResourceServerSecurity;
  * services call.</p>
  */
 @Configuration
-@Import({ ResourceServerSecurity.class, PermissionSecurity.class })
+@Import({ ResourceServerSecurity.class, PermissionSecurity.class, OrganizationSecurity.class })
 public class SecurityConfig {
 }

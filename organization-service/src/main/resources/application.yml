@@ -55,6 +55,19 @@ spring:
           # recognising on sight.
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8190/realms/platform}
 
+          # AUDIENCE VALIDATION. Not on by default in Spring, and it is the
+          # check that stops a stolen or misdirected service token being
+          # replayed somewhere it was never meant for.
+          #
+          #   platform-api   every human token carries this
+          #   organization-service   service tokens addressed to THIS service
+          #
+          # A token minted for organization-service therefore fails here, even
+          # though its signature, issuer and expiry are all perfectly valid.
+          audiences:
+            - platform-api
+            - organization-service
+
 management:
   endpoints:
     web:

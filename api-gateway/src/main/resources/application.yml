@@ -1,0 +1,69 @@
+server:
+  port: ${GATEWAY_PORT:8090}
+
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          # ---------------------------------------------------------------------
+          # Routing only. No filters that rewrite identity, and in particular
+          # nothing that strips the Authorization header: the token is forwarded
+          # untouched so each service can verify it for itself.
+          #
+          # Note what is NOT routed: /internal/**. Those endpoints are for
+          # service-to-service calls and have no business being reachable from a
+          # browser at all. They are already protected by a token_use rule inside
+          # each service; not routing them is the second, cheaper layer.
+          # ---------------------------------------------------------------------
+          routes:
+            - id: user-service
+              uri: ${USER_SERVICE_URL:http://localhost:8091}
+              predicates:
+                - Path=/api/users/**,/api/admin/**,/api/platform/**,/api/public/**
+
+            - id: organization-service
+              uri: ${ORGANIZATION_SERVICE_URL:http://localhost:8092}
+              predicates:
+                - Path=/api/organizations/**
+
+            - id: cadastral-service
+              uri: ${CADASTRAL_SERVICE_URL:http://localhost:8093}
+              predicates:
+                - Path=/api/projects/**,/api/payments/**
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # The gateway validates the same tokens as every service, against the
+          # same realm. It is a resource server too; it simply forwards rather
+          # than serving business data.
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8190/realms/platform}
+
+          # Only the human audience. A service-to-service token has no business
+          # entering through the front door: those calls go service to service,
+          # inside the network, never through the browser-facing gateway.
+          audiences:
+            - platform-api
+
+app:
+  cors:
+    allowed-origin: ${FRONTEND_ORIGIN:http://localhost:5174}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    org.springframework.security: INFO
+    org.springframework.cloud.gateway: INFO

@@ -33,12 +33,12 @@
         <module>user-service</module>
         <module>organization-service</module>
         <module>cadastral-service</module>
+        <module>api-gateway</module>
+        <module>oneid-identity-provider</module>
         <!--
             Added as each later phase lands, so that `mvn verify` always passes
             on a fresh clone rather than failing on an empty directory.
 
-            Phase 8:  api-gateway
-            Phase 9:  oneid-identity-provider
             Phase 10: mock-oneid
         -->
     </modules>

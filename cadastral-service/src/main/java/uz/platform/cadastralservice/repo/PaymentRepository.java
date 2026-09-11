@@ -9,5 +9,10 @@ import uz.platform.cadastralservice.domain.Payment;
 
 public interface PaymentRepository extends JpaRepository<Payment, UUID> {
 
-    List<Payment> findAllByOrderByCreatedAtDesc();
+    /**
+     * Scoped by organization, because that is the authorization boundary. There
+     * is deliberately no findAll-style method on the request path: it would be
+     * one careless call away from leaking another company's records.
+     */
+    List<Payment> findByOrganizationTinOrderByCreatedAtDesc(String organizationTin);
 }

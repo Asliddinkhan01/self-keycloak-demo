@@ -25,10 +25,11 @@ Two design documents accompany this code:
 | 3 | Resource servers + Flyway | **done** |
 | 4 | JWT role converter + caller type | **done** |
 | 5 | Permissions | **done** |
-| 6 | Organizations and TIN context | next |
-| 7 | Service-to-service | |
-| 8 | Gateway and Vue | |
-| 9–10 | OneID provider SPI, mock OneID | |
+| 6 | Organizations and TIN context | **done** |
+| 7 | Service-to-service hardening | **done** |
+| 8 | Gateway and Vue | **done** |
+| 9 | OneID provider SPI | **done** |
+| 10 | Mock OneID | next |
 | 11 | Logout | |
 | 12–13 | Tests, documentation | |
 
@@ -73,7 +74,7 @@ renaming the folder does not orphan the running containers and the data volume.
 
 ```
 .
-├── docker-compose.yml            postgres + keycloak
+├── docker-compose.yml            postgres + keycloak (built with the provider)
 ├── pom.xml                       aggregator, imports the Spring BOMs
 ├── postgres/init/01-schemas.sql  5 schemas, 5 logins, grants
 ├── keycloak/import/              realm: roles, clients, dev users
@@ -81,10 +82,10 @@ renaming the folder does not orphan the running containers and the data volume.
 ├── user-service/                 :8091  schema user_service
 ├── organization-service/         :8092  schema organization_service
 ├── cadastral-service/            :8093  schema cadastral_service
-├── api-gateway/                  :8090  phase 8
-├── oneid-identity-provider/      Keycloak SPI JAR, phase 9
+├── api-gateway/                  :8090  routing, CORS, edge token validation
+├── oneid-identity-provider/      Keycloak provider JAR, built into the image
 ├── mock-oneid/                   :8191  phase 10
-├── frontend/                     :5174  phase 8
+├── frontend/                     :5174  Vue 3, keycloak-js, org switcher
 └── docs/
 ```
 
@@ -458,6 +459,326 @@ organization-aware check lands without touching every annotation.
 fact into code: letting another role do the same thing means editing and redeploying every
 affected endpoint. A permission check states a stable requirement, and granting it elsewhere is
 one row in a table. Roles stay for coarse gates.
+
+---
+
+## Verifying phase 6
+
+A person may belong to several legal entities. OneID says so: one physical person can carry a
+`legal_info` array with many entries. The organization is therefore **request context, not
+identity** — one account, one PIN, one login, and an acting organization that can change
+between two consecutive calls.
+
+### The header is a request, never an assertion
+
+```
+X-Organization-TIN: 111111111
+```
+
+Anyone can put nine digits in a header. Trusting that value would be the largest hole an
+application like this can have: any authenticated user could file documents, read records and
+incur obligations on behalf of any company in the country.
+
+So every organization-scoped request is checked against `user_organizations` before the
+controller runs. `ali` belongs to two organizations and not to a third:
+
+| Header | Result |
+|---|---|
+| `111111111` — member | **201** |
+| `222222222` — member | **201** |
+| `444444444` — exists, not a member | **403** |
+| `999999999` — invented | **403** |
+| *(no header)* | **400** |
+
+```bash
+curl -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $(tok ali)" -H "X-Organization-TIN: 444444444" -H "Content-Type: application/json" -d '{"name":"x"}' http://localhost:8093/api/projects
+```
+
+```json
+{"error":"organization_membership_required","message":"You are not an active member of organization 444444444"}
+```
+
+A refusal is logged with the subject and the claimed TIN, which turns an attempt into a
+detection signal rather than a silent leak. No personal data and no token value is written.
+
+The missing-header case is **400, not 403**, because the caller may well be entitled to act for
+an organization and simply did not say which. Refusing rather than guessing a default matters:
+filing a construction project against a silently chosen company is worse than an error.
+
+### Switching organizations needs no new token
+
+The same bearer token, the same endpoint, a different header:
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" -H "X-Organization-TIN: 111111111" http://localhost:8093/api/projects
+curl -s -H "Authorization: Bearer $TOKEN" -H "X-Organization-TIN: 222222222" http://localhost:8093/api/projects
+```
+
+Each returns only that organization's projects. Scoping the query by the verified TIN *is* the
+authorization; returning everything and letting the UI filter would leak one company's
+construction records to another. A project outside the acting organization is reported as
+**404 rather than 403**, because "this exists but is not yours" confirms the existence of
+another company's records to someone with no right to know.
+
+### The database decides, not the token
+
+The token carries `org_tins`, and checking against that claim would be faster and entirely
+local. It is deliberately not what happens. The claim only **seeds** membership;
+`user_organizations` decides.
+
+That difference is visible. `malika`'s token has no `org_tins` claim at all. Grant her a
+membership directly, as an administrator would:
+
+```bash
+docker exec oneid-postgres psql -U postgres -d appdb -c "INSERT INTO organization_service.user_organizations (keycloak_sub, organization_id, is_basic, source, active) SELECT '<her-sub>', id, false, 'MANUAL', true FROM organization_service.organizations WHERE tin='111111111'"
+```
+
+Within the cache window she can act for that organization, using the same token she already
+had, with no re-login and no new claim. Reconciliation leaves the row alone because its source
+is `MANUAL` — OneID has no opinion about memberships it never granted. With a claim check,
+neither the grant nor a revocation would take effect until the token expired.
+
+### How a service that owns no membership data answers the question
+
+cadastral-service cannot read `user_organizations`: its PostgreSQL role has no privileges on
+that schema, and a query is refused by the database. So it asks organization-service over HTTP
+**as itself**, with a client-credentials token:
+
+```
+cadastral-service ──client_credentials──▶ Keycloak
+                  ──Bearer service token──▶ organization-service /internal/memberships/{sub}
+```
+
+That endpoint is protected twice over. The `/internal/**` rule requires `token_use: service`,
+so no browser reaches it, and `ORG_READ` means only a service actually granted that permission
+gets an answer. A human token is refused:
+
+```bash
+curl -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $(tok ali)" http://localhost:8092/internal/memberships/00000000-0000-0000-0000-000000000000
+```
+
+```
+403
+```
+
+Answers are cached for 60 seconds per person, so a burst of requests costs one call and a
+revocation takes effect within a minute. A **failed** lookup is never cached, so an outage at
+organization-service cannot freeze a wrong answer in place, and it fails closed: refusing a
+legitimate request during an outage is recoverable, allowing an illegitimate one is not.
+
+### A bug worth knowing about
+
+The first implementation put `@RequestScope` on the `OrganizationContext` **class**, while the
+bean was created by an `@Bean` method. Spring honours class-level scope only for
+component-scanned beans, so the annotation was **silently ignored** and the bean was a
+singleton.
+
+It looked like it worked. Membership checks passed and forged TINs were refused. What actually
+happened is that one caller's acting organization stayed set for the next caller's request, and
+a request sending no header inherited whichever organization was last used — which is how the
+missing-header case returned 201 instead of 400. The scope now lives on the `@Bean` method,
+where it takes effect.
+
+---
+
+## Verifying phase 7
+
+Two services now call organization-service, and the phase is about what separates them.
+
+### Two machine identities, two different privilege sets
+
+```bash
+svc() { curl -s -d "client_id=$1" -d "client_secret=$1-secret" -d "grant_type=client_credentials" http://localhost:8190/realms/platform/protocol/openid-connect/token | jq -r .access_token; }
+```
+
+| Caller | `GET /internal/memberships/{sub}` | `POST /internal/memberships/{sub}/sync` |
+|---|---|---|
+| `cadastral-service` | **200** — has `ORG_READ` | **403** — no `ORG_MEMBERSHIP_SYNC` |
+| `user-service` | **200** | **200** — has both |
+
+cadastral-service reads whether someone belongs to a company, because that is all it ever
+needs. user-service also writes, because bootstrapping a session is its job. Neither is
+"a trusted internal service" with blanket access, and that distinction is two rows of client
+roles in the realm rather than a convention anyone has to remember.
+
+### Neither service account is SUPER_ADMIN
+
+```bash
+svc cadastral-service   # then decode the payload
+```
+
+```json
+{
+  "azp": "cadastral-service",
+  "aud": "organization-service",
+  "token_use": "service",
+  "realm_access": { "roles": [] },
+  "resource_access": { "organization-service": { "roles": ["ORG_READ"] } }
+}
+```
+
+**No realm roles at all.** A service account carries client roles scoped to the service it
+calls, and holds no business role anywhere. That is what makes an audit line mean something:
+`SUPER_ADMIN` in a log now genuinely means a person did something, because no machine can
+produce it.
+
+Giving a service `SUPER_ADMIN` instead would fail in four ways at once. It abandons least
+privilege, since a service that needs to read memberships could then delete users. It destroys
+audit meaning. It makes one compromised service equal to full platform authority. And it cannot
+be revoked without also revoking the humans who share the role.
+
+### Audience validation
+
+Spring does **not** validate `aud` by default. It is now switched on in every service, with two
+accepted values: `platform-api`, which every human token carries, and the service's own name,
+which service tokens addressed to it carry.
+
+| Token | organization-service | cadastral-service | user-service |
+|---|---|---|---|
+| service token, `aud: organization-service` | **200** | **401** | **401** |
+| human token, `aud: platform-api` | 200 | 200 | 200 |
+
+```
+WWW-Authenticate: Bearer error="invalid_token",
+  error_description="An error occurred while attempting to decode the Jwt: The aud claim is not valid"
+```
+
+This is what stops a leaked or misdirected service token being replayed somewhere it was never
+meant for. The signature, issuer and expiry on that token are all perfectly valid; the audience
+is what refuses it.
+
+### One write path
+
+`GET /api/organizations/mine` is now read-only. Reconciliation moved to
+`POST /internal/memberships/{sub}/sync`, reachable only by a service holding
+`ORG_MEMBERSHIP_SYNC`. Two write paths to the same table is how they drift apart, so there is
+one, and a browser cannot reach it.
+
+Session bootstrap is therefore a single call the frontend makes after login:
+
+```bash
+curl -s -H "Authorization: Bearer $(tok ali)" http://localhost:8091/api/users/me | jq
+```
+
+user-service upserts the local profile from the verified token, calls organization-service as a
+service to reconcile memberships, and returns roles, effective permissions and active
+organizations together — everything the UI needs to render an organization switcher and hide
+actions the person cannot perform.
+
+Hiding actions in the UI is a convenience, never the control. Every endpoint checks the
+permission again on the server, because a hidden button is one curl command away from being
+pressed anyway.
+
+### Where the OAuth2 client wiring lives
+
+`ServiceWebClients` in `platform-security` builds both pieces: an
+`AuthorizedClientServiceOAuth2AuthorizedClientManager` for the client-credentials grant, and a
+`WebClient` with the exchange filter that attaches the token. Spring acquires, caches and
+renews; there is no hand-written token cache anywhere in this project, because hand-rolled
+caching is where refresh bugs live.
+
+Call sites contain no security code at all — `OrganizationClient` just makes an HTTP call.
+
+---
+
+## Verifying phase 8
+
+Everything now runs behind one entry point, and the browser talks only to it.
+
+```bash
+cd api-gateway && mvn spring-boot:run
+```
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+Open http://localhost:5174.
+
+### What the gateway does, and what it refuses to do
+
+It validates the token at the edge, owns CORS, routes, and forwards the request
+**unchanged**. It has no database, imports `ResourceServerSecurity` but not
+`PermissionSecurity`, and has no idea what `PROJECT_CREATE` means.
+
+It also never replaces the token with headers such as `X-User-Id`. That would turn a signed,
+verifiable assertion into a forgeable string and make every service depend on the gateway being
+the only possible caller — the assumption that fails the day something reaches a service
+directly.
+
+Every behaviour still holds when the call goes through :8090 rather than straight to a service:
+
+| Request through the gateway | Result |
+|---|---|
+| `/api/public/hello`, no token | 200 |
+| `/api/users/me`, no token | 401 |
+| `/api/users/me`, `ali` | 200 |
+| `/api/projects`, `ali` + valid TIN | 200 |
+| `/api/projects`, `ali`, no TIN header | 400 |
+| `/api/projects`, `ali`, TIN 444444444 | 403 |
+| `/internal/ping`, human token | 403 |
+
+The last row is worth reading twice. `/internal/**` has **no gateway route at all**, so it
+cannot be proxied to a service — and the shared security rule refuses a human token there
+anyway. Two independent layers, and neither relies on the other.
+
+### Services still validate for themselves
+
+Edge validation is a filter, not a guarantee. A misrouted internal call, a port-forward during
+debugging, or a future infrastructure change can all reach a service without passing through
+the gateway, which is why every service repeats signature, issuer, audience and permission
+checks. The two are not redundant; they defend different things.
+
+### CORS
+
+```bash
+curl -i -X OPTIONS -H "Origin: http://localhost:5174" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: authorization,content-type,x-organization-tin" http://localhost:8090/api/projects
+```
+
+```
+HTTP/1.1 200
+Access-Control-Allow-Origin: http://localhost:5174
+Access-Control-Allow-Headers: authorization, content-type, x-organization-tin
+```
+
+Another origin gets 403. Note that `X-Organization-TIN` has to be named in the allow-list or
+the browser blocks the preflight and the header never arrives — a failure that looks like a
+backend bug and is not.
+
+CORS is switched on **only** at the gateway. A service that declares no `CorsConfigurationSource`
+gets it disabled, because nothing calls it cross-origin and an unnecessary allow-list is an
+unnecessary thing to get wrong. And CORS is a browser rule, never authorization: curl ignores
+it entirely, which is why an endpoint can work in curl and fail in the app.
+
+### The frontend
+
+One page, deliberately plain, exercising each layer of the model:
+
+- **Load session** calls `/api/users/me`, which is where user-service reconciles memberships
+  through organization-service and returns roles, effective permissions and organizations.
+- **The organization switcher** sets `X-Organization-TIN`. Switching needs no new token.
+  Type `444444444` into the box and every project call answers 403.
+- **Every button stays enabled for everyone**, on purpose. Sign in as `bank_user` and press
+  Create project to watch a real 403 arrive. Hiding a button is a convenience; the server check
+  is the control, because a hidden button is one curl command away from being pressed.
+- **Without organization** and **Without token** buttons produce 400 and 401 deliberately, so
+  the three failure modes are visible side by side.
+
+The browser never sees the OneID client secret, the OneID access token, or the PIN. It holds a
+Keycloak token and nothing else.
+
+### Which gateway, and why
+
+Spring Cloud ships a reactive gateway and a servlet one. This project uses
+`spring-cloud-starter-gateway-server-webmvc`, the servlet flavour, so the whole platform keeps
+**one** security model: reactive Spring Security uses `SecurityWebFilterChain` and cannot reuse
+the servlet `SecurityFilterChain` in `platform-security`. The reactive gateway performs better
+under very high concurrency, and that is worth less here than not maintaining two security
+stacks.
+
+Routes live under `spring.cloud.gateway.server.webmvc.routes`. That prefix changed in Spring
+Cloud 2025.0; the older `spring.cloud.gateway.mvc.routes` still binds, which means a stale
+example from a blog post fails silently rather than loudly.
 
 ---
 

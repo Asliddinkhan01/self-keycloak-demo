@@ -54,6 +54,21 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!--
+            OAuth2 CLIENT, the opposite role from the resource server above. As a
+            resource server this service RECEIVES tokens; as a client it OBTAINS
+            its own to call organization-service. Its service account holds
+            ORG_MEMBERSHIP_SYNC, which cadastral-service deliberately does not.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

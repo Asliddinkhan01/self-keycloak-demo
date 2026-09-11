@@ -10,6 +10,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
  * The security baseline every microservice in this platform shares.
@@ -101,11 +103,24 @@ public class ResourceServerSecurity {
 
     @Bean
     public SecurityFilterChain securityFilterChain(
-            HttpSecurity http, PlatformJwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
+            HttpSecurity http,
+            PlatformJwtAuthenticationConverter jwtAuthenticationConverter,
+            ObjectProvider<OrganizationContextFilter> organizationContextFilter,
+            ObjectProvider<CorsConfigurationSource> corsConfigurationSource) throws Exception {
         http
-            // CORS is handled once at the gateway, which is the only origin a
-            // browser talks to. Services are not called cross-origin.
-            .cors(AbstractHttpConfigurer::disable)
+            // CORS is enabled only where a browser actually talks to the process,
+            // which is the gateway and nowhere else. A service that declares no
+            // CorsConfigurationSource gets it switched off, because it is never
+            // called cross-origin and an unnecessary allow-list is an unnecessary
+            // thing to get wrong.
+            .cors(cors -> {
+                CorsConfigurationSource source = corsConfigurationSource.getIfAvailable();
+                if (source == null) {
+                    cors.disable();
+                } else {
+                    cors.configurationSource(source);
+                }
+            })
 
             // No cookies, no sessions, no CSRF tokens. The JWT in the
             // Authorization header is the only thing that authenticates a call,
@@ -131,6 +146,14 @@ public class ResourceServerSecurity {
             // becomes false, against tokens that plainly carry the role.
             .oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
+
+        // Organization (TIN) context, for services with organization-scoped
+        // endpoints. Placed AFTER the authorization filter so only authenticated,
+        // already-authorized requests reach it: an anonymous caller still gets a
+        // plain 401 rather than a confusing 403 about organizations. Absent in
+        // services that never act on behalf of one.
+        organizationContextFilter.ifAvailable(filter ->
+                http.addFilterAfter(filter, AuthorizationFilter.class));
 
         return http.build();
     }

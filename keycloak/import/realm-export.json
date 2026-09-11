@@ -3,7 +3,7 @@
   "realm": "platform",
   "enabled": true,
   "displayName": "OneID Platform",
-  "sslRequired": "external",
+  "sslRequired": "none",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "resetPasswordAllowed": false,
@@ -29,6 +29,31 @@
       ]
     }
   },
+
+  "identityProviders": [
+    {
+      "alias": "oneid",
+      "displayName": "OneID",
+      "providerId": "oneid",
+      "enabled": true,
+      "trustEmail": true,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "authorizationUrl": "${ONEID_AUTHORIZATION_URL}",
+        "tokenUrl": "${ONEID_TOKEN_URL}",
+        "userInfoUrl": "${ONEID_IDENTIFY_URL}",
+        "clientId": "${ONEID_CLIENT_ID}",
+        "clientSecret": "${ONEID_CLIENT_SECRET}",
+        "defaultScope": "${ONEID_SCOPE}",
+        "callOneIdLogout": "false",
+        "updateProfileFirstLoginMode": "off",
+        "syncMode": "FORCE"
+      }
+    }
+  ],
 
   "clients": [
     {

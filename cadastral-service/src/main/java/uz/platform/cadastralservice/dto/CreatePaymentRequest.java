@@ -5,11 +5,14 @@ import java.util.UUID;
 
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.Size;
 
-/** Request body of POST /api/payments. */
+/**
+ * Request body of POST /api/payments.
+ *
+ * <p>As with projects, the organization is not part of the body. It comes from
+ * the verified X-Organization-TIN header.
+ */
 public record CreatePaymentRequest(
         @NotNull UUID projectId,
-        @NotNull @Positive BigDecimal amount,
-        @NotNull @Size(min = 9, max = 9) String organizationTin) {
+        @NotNull @Positive BigDecimal amount) {
 }

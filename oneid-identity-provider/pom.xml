@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>uz.platform</groupId>
+        <artifactId>oneid-platform</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>oneid-identity-provider</artifactId>
+    <name>oneid-identity-provider</name>
+    <description>Keycloak identity provider for OneID (sso.egov.uz)</description>
+
+    <!--
+        A KEYCLOAK PROVIDER JAR, not a Spring application.
+
+        This is the only module in the platform that is not a Spring Boot app.
+        It is dropped into Keycloak's providers directory and loaded by Keycloak
+        itself, so every dependency below is "provided": Keycloak supplies these
+        classes at runtime, and packaging copies of them into the jar would give
+        the server two versions of the same class to choose between.
+
+        WHY A PROVIDER AND NOT A SERVICE
+
+        OneID is OAuth2-shaped but neither OpenID Connect nor standard OAuth2: it
+        renames response_type to one_code and grant_type to
+        one_authorization_code, fetches user data through a third grant type
+        rather than a Bearer-authenticated userinfo endpoint, and returns no
+        id_token at all. Keycloak's built-in OIDC provider hardcodes the standard
+        constants, so it cannot be configured into this shape.
+
+        The alternative — a separate bridge service that speaks OneID upstream and
+        OIDC downstream — means writing a full OpenID Provider: authorization and
+        token endpoints, signed ID tokens, a JWKS endpoint with key rotation,
+        discovery, nonce handling. That is far more security-critical code than
+        the three methods below, and all of it would be ours to keep correct.
+
+        WHAT KEYCLOAK STILL DOES FOR US
+
+        state generation and verification, the callback endpoint, the browser-side
+        PKCE flow, session creation, federated identity storage, first-login
+        detection, account linking and token issuance. Only the three places where
+        OneID departs from OAuth2 are overridden.
+    -->
+
+    <!--
+        keycloak.version is inherited from the aggregator POM, which is the one
+        place that decides which Keycloak this jar is built against. Do not
+        redeclare it here: a property that refers to itself is a resolution
+        cycle, and Maven refuses to read the project at all.
+    -->
+
+    <dependencies>
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-core</artifactId>
+            <version>${keycloak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-server-spi</artifactId>
+            <version>${keycloak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-server-spi-private</artifactId>
+            <version>${keycloak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <!--
+            Brings AbstractOAuth2IdentityProvider and SimpleHttp. This is
+            Keycloak's INTERNAL API, which is the honest cost of this approach:
+            a major Keycloak upgrade is a task with a recompile and a test pass,
+            not a version bump. The version is pinned in the aggregator POM so
+            there is exactly one place that decides which Keycloak this is built
+            against.
+        -->
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-services</artifactId>
+            <version>${keycloak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>jakarta.ws.rs</groupId>
+            <artifactId>jakarta.ws.rs-api</artifactId>
+            <version>3.1.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>

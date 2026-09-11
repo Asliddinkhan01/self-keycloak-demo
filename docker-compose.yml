@@ -47,7 +47,16 @@ services:
       retries: 20
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.1
+    # Built from keycloak/Dockerfile rather than pulled: the OneID provider jar
+    # has to be present when kc.sh build runs, because Keycloak scans providers
+    # at build time and not at startup.
+    #
+    # Run this first, or the build context will be empty:
+    #   mvn -pl oneid-identity-provider -am -DskipTests package
+    #   cp oneid-identity-provider/target/*.jar keycloak/target-provider/
+    build:
+      context: ./keycloak
+    image: oneid-platform/keycloak:26.1
     container_name: oneid-keycloak
     # start-dev: HTTP allowed, no hostname strictness, theme caching off.
     # The DATABASE is production-shaped; the server mode is not. Production
@@ -77,6 +86,22 @@ services:
       # ever written into a committed file.
       USER_SERVICE_CLIENT_SECRET: ${USER_SERVICE_CLIENT_SECRET:-user-service-secret}
       CADASTRAL_SERVICE_CLIENT_SECRET: ${CADASTRAL_SERVICE_CLIENT_SECRET:-cadastral-service-secret}
+
+      # ---- OneID identity provider -------------------------------------
+      # Read by realm-export.json at import time, so no credential is ever
+      # written into a committed file. Locally these point at mock-oneid,
+      # which speaks the same wire protocol; in production they point at
+      # https://sso.egov.uz/sso/oauth/Authorization.do and the client id,
+      # secret and scope issued by the operator.
+      #
+      # All three URLs are the same value on purpose: OneID uses one endpoint
+      # for authorization, token exchange, identification and logout.
+      ONEID_AUTHORIZATION_URL: ${ONEID_AUTHORIZATION_URL:-http://mock-oneid:8080/sso/oauth/Authorization.do}
+      ONEID_TOKEN_URL: ${ONEID_TOKEN_URL:-http://mock-oneid:8080/sso/oauth/Authorization.do}
+      ONEID_IDENTIFY_URL: ${ONEID_IDENTIFY_URL:-http://mock-oneid:8080/sso/oauth/Authorization.do}
+      ONEID_CLIENT_ID: ${ONEID_CLIENT_ID:-platform}
+      ONEID_CLIENT_SECRET: ${ONEID_CLIENT_SECRET:-platform-oneid-secret}
+      ONEID_SCOPE: ${ONEID_SCOPE:-platform}
     ports:
       - "${KEYCLOAK_PORT:-8190}:8080"
     volumes:

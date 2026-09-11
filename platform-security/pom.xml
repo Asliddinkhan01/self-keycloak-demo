@@ -58,6 +58,23 @@
             <optional>true</optional>
         </dependency>
 
+
+        <!--
+            The OAuth2 CLIENT role, for services that CALL other services. Optional
+            because it is the opposite of what most consumers need: a resource
+            server only receives tokens. The API gateway and organization-service
+            never call anyone, so they should not inherit this.
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-client</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webflux</artifactId>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

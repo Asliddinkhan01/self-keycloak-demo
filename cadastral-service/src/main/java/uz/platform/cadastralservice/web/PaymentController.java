@@ -18,14 +18,14 @@ import jakarta.validation.Valid;
 import uz.platform.cadastralservice.domain.Payment;
 import uz.platform.cadastralservice.dto.CreatePaymentRequest;
 import uz.platform.cadastralservice.repo.PaymentRepository;
+import uz.platform.security.OrganizationContext;
 import uz.platform.security.PlatformClaims;
 
 /**
- * Payments, held by the BANK role.
+ * Payments, held by the BANK role and scoped to the acting organization.
  *
- * <p>These two endpoints exist to prove that effective permissions are the
- * <b>union across all of a caller's roles</b>, with no precedence and no role
- * containing another:</p>
+ * <p>These endpoints prove that effective permissions are the <b>union across all
+ * of a caller's roles</b>, with no precedence and no role containing another:</p>
  *
  * <ul>
  *   <li>{@code ali} is QURUVCHI: creates projects, refused here.</li>
@@ -33,21 +33,30 @@ import uz.platform.security.PlatformClaims;
  *   <li>{@code dual} is both: creates projects <em>and</em> payments, with no
  *       special case anywhere in the code.</li>
  * </ul>
+ *
+ * <p>Permission and organization remain independent. Holding
+ * {@code PAYMENT_CREATE} says a caller may record payments; the verified TIN says
+ * which company's books they are recording them in.</p>
  */
 @RestController
 @RequestMapping("/api/payments")
 public class PaymentController {
 
     private final PaymentRepository payments;
+    private final OrganizationContext organizationContext;
 
-    public PaymentController(PaymentRepository payments) {
+    public PaymentController(PaymentRepository payments, OrganizationContext organizationContext) {
         this.payments = payments;
+        this.organizationContext = organizationContext;
     }
 
     @PreAuthorize("@permissionChecker.has(authentication, 'PAYMENT_READ')")
     @GetMapping
     public List<Map<String, Object>> list() {
-        return payments.findAllByOrderByCreatedAtDesc().stream().map(PaymentController::toView).toList();
+        String tin = organizationContext.requireTin();
+        return payments.findByOrganizationTinOrderByCreatedAtDesc(tin).stream()
+                .map(PaymentController::toView)
+                .toList();
     }
 
     @PreAuthorize("@permissionChecker.has(authentication, 'PAYMENT_CREATE')")
@@ -57,7 +66,7 @@ public class PaymentController {
         Payment created = payments.save(new Payment(
                 request.projectId(),
                 request.amount(),
-                request.organizationTin(),
+                organizationContext.requireTin(),
                 PlatformClaims.subject(jwt)));
         return ResponseEntity.status(HttpStatus.CREATED).body(toView(created));
     }

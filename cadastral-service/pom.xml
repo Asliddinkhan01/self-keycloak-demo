@@ -50,6 +50,25 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+
+        <!--
+            OAuth2 CLIENT, which is the opposite role from the resource server
+            above. As a resource server this service RECEIVES tokens; as a client
+            it OBTAINS its own, with the client-credentials grant, to call
+            organization-service. Spring acquires, caches and renews that token,
+            so there is no hand-written token cache anywhere in this project.
+
+            webflux is here only for WebClient. No reactive web server is started:
+            spring-boot-starter-web is also present, so the app stays servlet-based.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>

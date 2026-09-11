@@ -36,8 +36,28 @@ spring:
     schemas: user_service
     default-schema: user_service
 
+  # ---------------------------------------------------------------------------
+  # OAuth2 CLIENT: this service calls organization-service as ITSELF, with the
+  # client-credentials grant. No user is involved and no user token is
+  # forwarded, so the token represents the SERVICE.
+  #
+  # Its service account holds ORG_MEMBERSHIP_SYNC and ORG_READ.
+  # cadastral-service holds only ORG_READ. Two machine identities, two
+  # different privilege sets, neither of them SUPER_ADMIN.
+  # ---------------------------------------------------------------------------
   security:
     oauth2:
+      client:
+        registration:
+          organization-service:
+            client-id: user-service
+            client-secret: ${USER_SERVICE_CLIENT_SECRET:user-service-secret}
+            authorization-grant-type: client_credentials
+            provider: keycloak
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8190/realms/platform}
+
       resourceserver:
         jwt:
           # The single most important line of security configuration.
@@ -55,6 +75,19 @@ spring:
           # recognising on sight.
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8190/realms/platform}
 
+          # AUDIENCE VALIDATION. Not on by default in Spring, and it is the
+          # check that stops a stolen or misdirected service token being
+          # replayed somewhere it was never meant for.
+          #
+          #   platform-api   every human token carries this
+          #   user-service   service tokens addressed to THIS service
+          #
+          # A token minted for organization-service therefore fails here, even
+          # though its signature, issuer and expiry are all perfectly valid.
+          audiences:
+            - platform-api
+            - user-service
+
 management:
   endpoints:
     web:
@@ -69,3 +102,7 @@ logging:
     # Verbose while learning: it shows exactly why a request was rejected —
     # bad signature, wrong issuer, expired token, or a missing authority.
     org.springframework.security: DEBUG
+
+app:
+  organization-service:
+    base-url: ${ORGANIZATION_SERVICE_URL:http://localhost:8092}

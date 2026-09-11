@@ -36,8 +36,29 @@ spring:
     schemas: cadastral_service
     default-schema: cadastral_service
 
+  # ---------------------------------------------------------------------------
+  # This service is BOTH an OAuth2 resource server (it receives tokens) and an
+  # OAuth2 client (it obtains its own to call organization-service).
+  #
+  # The registration below uses client_credentials: no user is involved, so the
+  # token represents the SERVICE, not a person. That is the whole point — see
+  # "SUPER_ADMIN is not a service account" in the README.
+  #
+  # The secret comes from the environment. Never commit one.
+  # ---------------------------------------------------------------------------
   security:
     oauth2:
+      client:
+        registration:
+          organization-service:
+            client-id: cadastral-service
+            client-secret: ${CADASTRAL_SERVICE_CLIENT_SECRET:cadastral-service-secret}
+            authorization-grant-type: client_credentials
+            provider: keycloak
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8190/realms/platform}
+
       resourceserver:
         jwt:
           # The single most important line of security configuration.
@@ -55,6 +76,19 @@ spring:
           # recognising on sight.
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8190/realms/platform}
 
+          # AUDIENCE VALIDATION. Not on by default in Spring, and it is the
+          # check that stops a stolen or misdirected service token being
+          # replayed somewhere it was never meant for.
+          #
+          #   platform-api   every human token carries this
+          #   cadastral-service   service tokens addressed to THIS service
+          #
+          # A token minted for organization-service therefore fails here, even
+          # though its signature, issuer and expiry are all perfectly valid.
+          audiences:
+            - platform-api
+            - cadastral-service
+
 management:
   endpoints:
     web:
@@ -69,3 +103,11 @@ logging:
     # Verbose while learning: it shows exactly why a request was rejected —
     # bad signature, wrong issuer, expired token, or a missing authority.
     org.springframework.security: DEBUG
+
+app:
+  organization-service:
+    base-url: ${ORGANIZATION_SERVICE_URL:http://localhost:8092}
+    # How long a membership answer is trusted before asking again. Short enough
+    # that a revoked membership stops working quickly, long enough that a burst
+    # of requests from one user costs one call rather than hundreds.
+    membership-cache-ttl-seconds: ${MEMBERSHIP_CACHE_TTL:60}
