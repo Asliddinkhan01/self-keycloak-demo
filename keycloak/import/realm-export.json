@@ -1,95 +1,218 @@
 {
-  "id": "demo",
-  "realm": "demo",
+  "id": "platform",
+  "realm": "platform",
   "enabled": true,
-  "displayName": "Keycloak Microservices Demo",
-  "displayNameHtml": "<div class=\"kc-logo-text\"><span>Keycloak Demo</span><small>Sign in to continue to the microservices demo</small></div>",
-  "loginTheme": "demo",
-
+  "displayName": "OneID Platform",
   "sslRequired": "external",
+  "registrationAllowed": false,
   "loginWithEmailAllowed": true,
-  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
   "editUsernameAllowed": false,
-
-  "registrationAllowed": true,
-  "registrationEmailAsUsername": false,
-  "resetPasswordAllowed": true,
-  "rememberMe": true,
-  "verifyEmail": false,
 
   "accessTokenLifespan": 300,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
 
-  "defaultRole": {
-    "name": "default-roles-demo",
-    "description": "${role_default-roles}",
-    "composite": true,
-    "clientRole": false,
-    "containerId": "demo"
-  },
-
   "roles": {
     "realm": [
-      {
-        "name": "USER",
-        "description": "Ordinary authenticated user of the demo"
-      },
-      {
-        "name": "ADMIN",
-        "description": "Administrator: may create and delete products"
-      },
-      {
-        "name": "default-roles-demo",
-        "description": "${role_default-roles}",
-        "composite": true,
-        "composites": {
-          "realm": [
-            "USER"
-          ]
-        },
-        "clientRole": false,
-        "containerId": "demo"
-      }
-    ]
+      { "name": "QURUVCHI",       "description": "Builder. Creates and updates construction projects." },
+      { "name": "JISMONIY_SHAXS", "description": "Physical person. Baseline role for every OneID account." },
+      { "name": "YURIDIK_SHAXS",  "description": "Legal entity representative. Acts on behalf of an organization." },
+      { "name": "BANK",           "description": "Bank operator. Reads and records payments." },
+      { "name": "ADMIN",          "description": "Administrator. Manages users." },
+      { "name": "SUPER_ADMIN",    "description": "Platform administrator. NOT a superset of ADMIN — see role_permissions." }
+    ],
+    "client": {
+      "organization-service": [
+        { "name": "ORG_READ",              "description": "Machine permission: read organizations and memberships." },
+        { "name": "ORG_MEMBERSHIP_SYNC",   "description": "Machine permission: reconcile memberships from OneID data." }
+      ]
+    }
   },
 
   "clients": [
     {
-      "clientId": "demo-frontend",
-      "name": "Vue frontend (public client)",
-      "description": "Public OIDC client used by the Vue SPA. Public = no client secret, because a browser cannot keep a secret. Security comes from PKCE + registered redirect URIs.",
+      "clientId": "platform-web",
+      "name": "Vue SPA (public client)",
+      "description": "The browser application. Public because a browser cannot keep a secret; safety comes from PKCE and exact redirect URIs.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": true,
-      "bearerOnly": false,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
-      "rootUrl": "http://localhost:5173",
+      "rootUrl": "http://localhost:5174",
       "baseUrl": "/",
-      "redirectUris": [
-        "http://localhost:5173/*"
-      ],
-      "webOrigins": [
-        "http://localhost:5173"
-      ],
+      "redirectUris": ["http://localhost:5174/*"],
+      "webOrigins": ["http://localhost:5174"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/*"
+        "post.logout.redirect.uris": "http://localhost:5174/*"
       },
       "protocolMappers": [
         {
-          "name": "audience-demo-api",
+          "name": "token-use-user",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "token_use",
+            "claim.value": "user",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "audience-platform-api",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
           "config": {
-            "included.custom.audience": "demo-api",
+            "included.custom.audience": "platform-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "org-tins",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "org_tins",
+            "claim.name": "org_tins",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
             "id.token.claim": "false",
-            "access.token.claim": "true"
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "identity-verified",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "identity_verified",
+            "claim.name": "identity_verified",
+            "jsonType.label": "boolean",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "user-type",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "user_type",
+            "claim.name": "user_type",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    },
+
+    {
+      "clientId": "organization-service",
+      "name": "organization-service (resource server)",
+      "description": "Registered ONLY so that it can own client roles and act as a token audience. No login flow, no service account: it receives calls, it never makes them.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+
+    {
+      "clientId": "user-service",
+      "name": "user-service (service account)",
+      "description": "Confidential client. Calls organization-service to reconcile memberships.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${USER_SERVICE_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "token-use-service",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "token_use",
+            "claim.value": "service",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "audience-organization-service",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "organization-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+
+    {
+      "clientId": "cadastral-service",
+      "name": "cadastral-service (service account)",
+      "description": "Confidential client. Calls organization-service to validate TIN membership. Holds ORG_READ and nothing else — least privilege made concrete.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${CADASTRAL_SERVICE_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "token-use-service",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "token_use",
+            "claim.value": "service",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "audience-organization-service",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "organization-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
           }
         }
       ]
@@ -98,57 +221,113 @@
 
   "users": [
     {
-      "username": "user",
+      "username": "service-account-user-service",
       "enabled": true,
-      "emailVerified": true,
-      "firstName": "Ursula",
-      "lastName": "User",
-      "email": "user@demo.local",
-      "credentials": [
-        {
-          "type": "password",
-          "value": "password",
-          "temporary": false
-        }
-      ],
-      "realmRoles": [
-        "USER"
-      ]
+      "serviceAccountClientId": "user-service",
+      "clientRoles": {
+        "organization-service": ["ORG_MEMBERSHIP_SYNC", "ORG_READ"]
+      }
     },
     {
-      "username": "admin",
+      "username": "service-account-cadastral-service",
+      "enabled": true,
+      "serviceAccountClientId": "cadastral-service",
+      "clientRoles": {
+        "organization-service": ["ORG_READ"]
+      }
+    },
+
+    {
+      "username": "ali",
       "enabled": true,
       "emailVerified": true,
-      "firstName": "Adam",
-      "lastName": "Admin",
-      "email": "admin@demo.local",
-      "credentials": [
-        {
-          "type": "password",
-          "value": "password",
-          "temporary": false
-        }
-      ],
-      "realmRoles": [
-        "USER",
-        "ADMIN"
-      ]
+      "firstName": "Ali",
+      "lastName": "Karimov",
+      "email": "ali@example.uz",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["JISMONIY_SHAXS", "YURIDIK_SHAXS", "QURUVCHI"],
+      "attributes": {
+        "org_tins": ["111111111", "222222222"],
+        "identity_verified": ["true"],
+        "user_type": ["I"],
+        "oneid_user_id": ["ali"]
+      }
     },
     {
-      "username": "nobody",
+      "username": "malika",
       "enabled": true,
       "emailVerified": true,
-      "firstName": "Nora",
-      "lastName": "Nobody",
-      "email": "nobody@demo.local",
-      "credentials": [
-        {
-          "type": "password",
-          "value": "password",
-          "temporary": false
-        }
-      ],
-      "realmRoles": []
+      "firstName": "Malika",
+      "lastName": "Yusupova",
+      "email": "malika@example.uz",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["JISMONIY_SHAXS"],
+      "attributes": {
+        "identity_verified": ["true"],
+        "user_type": ["I"],
+        "oneid_user_id": ["malika"]
+      }
+    },
+    {
+      "username": "bank_user",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Bek",
+      "lastName": "Bankov",
+      "email": "bank@example.uz",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["JISMONIY_SHAXS", "BANK"],
+      "attributes": {
+        "org_tins": ["333333333"],
+        "identity_verified": ["true"],
+        "user_type": ["L"],
+        "oneid_user_id": ["bank_user"]
+      }
+    },
+    {
+      "username": "admin_user",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Aziza",
+      "lastName": "Adminova",
+      "email": "admin@example.uz",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["JISMONIY_SHAXS", "ADMIN"],
+      "attributes": {
+        "identity_verified": ["true"],
+        "user_type": ["I"],
+        "oneid_user_id": ["admin_user"]
+      }
+    },
+    {
+      "username": "super_admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Sardor",
+      "lastName": "Superov",
+      "email": "super@example.uz",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["JISMONIY_SHAXS", "SUPER_ADMIN"],
+      "attributes": {
+        "identity_verified": ["true"],
+        "user_type": ["I"],
+        "oneid_user_id": ["super_admin"]
+      }
+    },
+    {
+      "username": "unverified",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Nodir",
+      "lastName": "Tasdiqlanmagan",
+      "email": "unverified@example.uz",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["JISMONIY_SHAXS"],
+      "attributes": {
+        "identity_verified": ["false"],
+        "user_type": ["I"],
+        "oneid_user_id": ["unverified"]
+      }
     }
   ]
 }

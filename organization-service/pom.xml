@@ -10,9 +10,9 @@
         <version>1.0.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>user-service</artifactId>
-    <name>user-service</name>
-    <description>Profiles, the role-permission catalog, and administrative user endpoints</description>
+    <artifactId>organization-service</artifactId>
+    <name>organization-service</name>
+    <description>Organizations and user-organization memberships (TIN context)</description>
 
     <dependencies>
         <dependency>

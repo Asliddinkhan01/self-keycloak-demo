@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>uz.platform</groupId>
+        <artifactId>oneid-platform</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>platform-security</artifactId>
+    <name>platform-security</name>
+    <description>Shared security: JWT validation defaults, role conversion, permissions, organization context</description>
+
+    <!--
+        A PLAIN LIBRARY, not a Spring Boot application. There is no
+        spring-boot-maven-plugin here on purpose: repackaging would produce a
+        fat executable jar that cannot be used as a dependency.
+
+        SCOPE DISCIPLINE: this module holds security decisions and nothing else.
+        No entities, no controllers, no business logic. The moment something in
+        here is not about deciding who may do what, it belongs in a service.
+        That discipline is what keeps a shared library from becoming a
+        distributed monolith.
+    -->
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <!--
+            The only Keycloak-related dependency any service needs. It brings
+            Nimbus JOSE + JWT, which downloads Keycloak's public keys (JWKS)
+            and verifies token signatures locally. The deprecated Keycloak
+            Spring adapters are not used anywhere in this project.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

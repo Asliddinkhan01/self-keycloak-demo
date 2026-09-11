@@ -5,3 +5,6 @@ dist/
 *.iml
 .vscode/
 *.log
+
+# --- oneid-platform ---
+.env

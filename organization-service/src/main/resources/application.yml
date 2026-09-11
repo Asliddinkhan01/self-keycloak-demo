@@ -1,20 +1,20 @@
 server:
-  port: ${USER_SERVICE_PORT:8091}
+  port: ${ORGANIZATION_SERVICE_PORT:8092}
 
 spring:
   application:
-    name: user-service
+    name: organization-service
 
   # ---------------------------------------------------------------------------
-  # This service owns the "user_service" schema and logs in as its own
+  # This service owns the "organization_service" schema and logs in as its own
   # PostgreSQL role, which has no privileges on any other schema. A stray join
   # across a service boundary fails in the database, not in code review.
   # Port 5452, not 5432: see the README on contested default ports.
   # ---------------------------------------------------------------------------
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5452}/${DB_NAME:appdb}
-    username: ${DB_USER:user_service}
-    password: ${DB_PASSWORD:user_service}
+    username: ${DB_USER:organization_service}
+    password: ${DB_PASSWORD:organization_service}
 
   jpa:
     hibernate:
@@ -25,7 +25,7 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-        default_schema: user_service
+        default_schema: organization_service
     # Off in a REST service: it holds a Hibernate session open for the whole
     # request and hides lazy-loading mistakes until production.
     open-in-view: false
@@ -33,8 +33,8 @@ spring:
 
   flyway:
     enabled: true
-    schemas: user_service
-    default-schema: user_service
+    schemas: organization_service
+    default-schema: organization_service
 
   security:
     oauth2:
