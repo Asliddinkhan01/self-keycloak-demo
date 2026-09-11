@@ -3,6 +3,7 @@ package uz.platform.cadastralservice.config;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 
+import uz.platform.security.PermissionSecurity;
 import uz.platform.security.ResourceServerSecurity;
 
 /**
@@ -14,6 +15,6 @@ import uz.platform.security.ResourceServerSecurity;
  * nothing else — least privilege made concrete, and the subject of phase 7.</p>
  */
 @Configuration
-@Import(ResourceServerSecurity.class)
+@Import({ ResourceServerSecurity.class, PermissionSecurity.class })
 public class SecurityConfig {
 }

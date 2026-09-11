@@ -79,6 +79,27 @@
     </dependencyManagement>
 
     <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!--
+                        Keeps parameter names in the class files.
+
+                        spring-boot-starter-parent sets this for you; this project
+                        uses an aggregator plus imported BOMs instead, so it has to
+                        be set explicitly. Without it Spring MVC cannot work out
+                        which path variable a method argument refers to, and every
+                        @PathVariable and @RequestParam without an explicit name
+                        fails at runtime with "parameter name information not
+                        available via reflection" — a 500, not a compile error.
+                    -->
+                    <parameters>true</parameters>
+                </configuration>
+            </plugin>
+        </plugins>
+
         <pluginManagement>
             <plugins>
                 <plugin>

@@ -285,6 +285,22 @@
       }
     },
     {
+      "username": "dual",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Dilnoza",
+      "lastName": "Ikkitomonlama",
+      "email": "dual@example.uz",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["JISMONIY_SHAXS", "QURUVCHI", "BANK"],
+      "attributes": {
+        "org_tins": ["111111111"],
+        "identity_verified": ["true"],
+        "user_type": ["I"],
+        "oneid_user_id": ["dual"]
+      }
+    },
+    {
       "username": "admin_user",
       "enabled": true,
       "emailVerified": true,

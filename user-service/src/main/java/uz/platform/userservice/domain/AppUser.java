@@ -30,9 +30,9 @@ import jakarta.persistence.Table;
 @Table(name = "users")
 public class AppUser {
 
-    @Id
     // Client-side UUID generation. The DEFAULT gen_random_uuid() in the
     // migration stays as a safety net for rows inserted by plain SQL.
+    @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
@@ -127,6 +127,11 @@ public class AppUser {
 
     public OffsetDateTime getLastLoginAt() {
         return lastLoginAt;
+    }
+
+    /** Administrative edit of the display name. */
+    public void rename(String fullName) {
+        this.fullName = fullName;
     }
 
     /**

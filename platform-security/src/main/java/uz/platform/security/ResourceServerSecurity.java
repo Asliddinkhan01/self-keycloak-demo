@@ -1,5 +1,7 @@
 package uz.platform.security;
 
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -60,8 +62,46 @@ public class ResourceServerSecurity {
             "/actuator/health/**"
     };
 
+    /**
+     * Endpoints meant for other services, never for a browser.
+     *
+     * <p>Enforced as a URL rule rather than only an annotation, so that a new
+     * internal endpoint is protected the moment it is added to this path, with
+     * no way to forget the annotation. A human token reaching one of these gets
+     * 403, which is the correct answer: the caller is authenticated, and still
+     * not the kind of caller this endpoint serves.</p>
+     */
+    public static final String[] INTERNAL_PATHS = {
+            "/internal/**"
+    };
+
+    /**
+     * Maps Keycloak's claims onto Spring authorities.
+     *
+     * <p>The resource id defaults to {@code spring.application.name}, which by
+     * convention throughout this platform equals the service's Keycloak client
+     * id. That is what lets a service pick its own client roles out of
+     * {@code resource_access} and ignore roles granted against anyone else.</p>
+     */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public KeycloakAuthoritiesConverter keycloakAuthoritiesConverter(
+            @Value("${platform.security.resource-id:${spring.application.name}}") String resourceId,
+            ObjectProvider<PermissionCatalog> permissionCatalog) {
+        // ObjectProvider, not a required dependency: a service that makes no
+        // business authorization decision — the API gateway — imports this
+        // configuration without importing PermissionSecurity, and still works.
+        return new KeycloakAuthoritiesConverter(resourceId, permissionCatalog.getIfAvailable());
+    }
+
+    @Bean
+    public PlatformJwtAuthenticationConverter platformJwtAuthenticationConverter(
+            KeycloakAuthoritiesConverter authoritiesConverter) {
+        return new PlatformJwtAuthenticationConverter(authoritiesConverter);
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http, PlatformJwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
         http
             // CORS is handled once at the gateway, which is the only origin a
             // browser talks to. Services are not called cross-origin.
@@ -75,6 +115,10 @@ public class ResourceServerSecurity {
 
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC_PATHS).permitAll()
+                // Service-to-service only. TOKEN_USE_SERVICE comes from the
+                // token_use claim, so this is a claim check wearing the clothes
+                // of an ordinary authority check.
+                .requestMatchers(INTERNAL_PATHS).hasAuthority(CallerType.SERVICE.authority())
                 .anyRequest().authenticated()
             )
 
@@ -82,10 +126,11 @@ public class ResourceServerSecurity {
             // against keys fetched once from the realm and cached, so no call
             // leaves the service on the request path.
             //
-            // Phase 4 plugs the Keycloak role converter in here. Until then the
-            // Spring default applies, which reads only the "scope" claim — which
-            // is exactly why roles do not work yet.
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}));
+            // The converter is what makes Keycloak roles visible to Spring.
+            // Remove this one line and every hasRole(...) in the platform
+            // becomes false, against tokens that plainly carry the role.
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
 
         return http.build();
     }

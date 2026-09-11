@@ -30,6 +30,13 @@ public final class PlatformClaims {
     /** Client roles live here, keyed by client id: {@code resource_access.<client>.roles}. */
     public static final String RESOURCE_ACCESS = "resource_access";
 
+    /**
+     * Authorized party: the client the token was issued to. On a service token
+     * this names the calling service, which makes it the natural fallback
+     * principal name when there is no human username.
+     */
+    public static final String AUTHORIZED_PARTY = "azp";
+
     public static final String ROLES = "roles";
 
     /**

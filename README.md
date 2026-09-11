@@ -23,9 +23,9 @@ Two design documents accompany this code:
 |---|---|---|
 | 1–2 | Structure, PostgreSQL, Keycloak, realm | **done** |
 | 3 | Resource servers + Flyway | **done** |
-| 4 | JWT role converter | next |
-| 5 | Permissions | |
-| 6 | Organizations and TIN context | |
+| 4 | JWT role converter + caller type | **done** |
+| 5 | Permissions | **done** |
+| 6 | Organizations and TIN context | next |
 | 7 | Service-to-service | |
 | 8 | Gateway and Vue | |
 | 9–10 | OneID provider SPI, mock OneID | |
@@ -230,7 +230,7 @@ TOKEN=$(curl -s -d "client_id=platform-web" -d "username=ali" -d "password=passw
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8091/api/users/me
 ```
 
-### The gap phase 4 closes
+### The gap phase 4 closed
 
 That last response is worth reading carefully:
 
@@ -239,13 +239,17 @@ That last response is worth reading carefully:
 "springAuthorities":   ["SCOPE_email", "SCOPE_profile"]
 ```
 
-The token plainly carries three roles, and Spring Security has none of them. This is the
-single most common Keycloak-with-Spring failure, and it is not a bug: Spring's default
-converter reads only the `scope` claim and knows nothing about Keycloak's `realm_access`. Every
-`hasRole(...)` would be false right now, against a token that visibly says otherwise.
+That was phase 3. The token plainly carried three roles and Spring Security had none of them —
+the single most common Keycloak-with-Spring failure, and not a bug: Spring's default converter
+reads only the `scope` claim and knows nothing about Keycloak's `realm_access`.
 
-Phase 4 adds the converter that closes it, and this endpoint is where the change becomes
-visible.
+With the phase 4 converter in place the same call now returns:
+
+```json
+"realmRolesFromToken": ["JISMONIY_SHAXS", "QURUVCHI", "YURIDIK_SHAXS"],
+"springAuthorities":   ["ROLE_JISMONIY_SHAXS", "ROLE_QURUVCHI", "ROLE_YURIDIK_SHAXS",
+                        "SCOPE_email", "SCOPE_profile", "TOKEN_USE_USER"]
+```
 
 ### Telling a decoder failure from a bad token
 
@@ -263,6 +267,200 @@ could not reach Keycloak at all, so no token can ever succeed. Learn to tell tho
 
 ---
 
+## Verifying phase 4
+
+Phase 4 adds three things to `platform-security`: the authorities converter, an explicit
+principal-name resolver, and caller-type detection. Run user-service and organization-service,
+then get tokens:
+
+```bash
+tok() { curl -s -d "client_id=platform-web" -d "username=$1" -d "password=password" -d "grant_type=password" http://localhost:8190/realms/platform/protocol/openid-connect/token | jq -r .access_token; }
+```
+
+```bash
+svc() { curl -s -d "client_id=$1" -d "client_secret=$1-secret" -d "grant_type=client_credentials" http://localhost:8190/realms/platform/protocol/openid-connect/token | jq -r .access_token; }
+```
+
+### Roles now reach Spring Security
+
+```bash
+curl -s -H "Authorization: Bearer $(tok ali)" http://localhost:8091/api/users/me | jq '{realmRolesFromToken, springAuthorities}'
+```
+
+### SUPER_ADMIN is not a superset of ADMIN
+
+Both directions are checked, because a role that is silently a wildcard would pass only one:
+
+| Caller | `GET /api/admin/users` | `GET /api/platform/audit` |
+|---|---|---|
+| `ali` (QURUVCHI) | 403 | 403 |
+| `admin_user` (ADMIN) | **200** | 403 |
+| `super_admin` (SUPER_ADMIN) | 403 | **200** |
+
+```bash
+curl -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $(tok super_admin)" http://localhost:8091/api/admin/users
+```
+
+### Humans and machines are told apart
+
+The `token_use` claim becomes an authority, so the distinction is enforced by an ordinary URL
+rule rather than a custom `AuthorizationManager`:
+
+| Caller | `GET :8092/internal/ping` | `GET :8091/api/users/me` |
+|---|---|---|
+| `ali` (human token) | 403 | **200** |
+| `cadastral-service` (service token) | **200** | 403 |
+
+```bash
+curl -s -H "Authorization: Bearer $(svc cadastral-service)" http://localhost:8092/internal/ping | jq
+```
+
+```json
+{
+  "principal": "service-account-cadastral-service",
+  "callerType": "SERVICE",
+  "callingClient": "cadastral-service",
+  "audience": ["organization-service"],
+  "rolesGrantedHere": ["ORG_READ"]
+}
+```
+
+That last field is least privilege you can see. The token carries `ORG_READ` against
+organization-service and nothing else, anywhere — no `USER_*`, no write permission, and no
+business role. It is a machine identity, not a person wearing `SUPER_ADMIN`.
+
+### How the mapping works
+
+```
+realm_access.roles          ["QURUVCHI"]     ->  ROLE_QURUVCHI
+resource_access.<me>.roles  ["ORG_READ"]     ->  ORG_READ
+scope                       "profile email"  ->  SCOPE_profile, SCOPE_email
+token_use                   "user"           ->  TOKEN_USE_USER
+```
+
+The `ROLE_` prefix is not decorative. `hasRole("ADMIN")` is evaluated as
+`hasAuthority("ROLE_ADMIN")`; Spring adds the prefix when **checking** and never when
+**building**, so the converter must add it. Keycloak roles are named without it precisely so
+that the mapping stays one readable line.
+
+Client roles get no prefix, because they are machine permissions rather than business roles and
+read better as `hasAuthority('ORG_READ')`. Only roles granted against **this** service are
+mapped, which is what makes per-service scoping real rather than advisory.
+
+To see why the converter matters, comment out this line in `ResourceServerSecurity` and rerun
+the table above — every role check starts failing against tokens that visibly carry the role:
+
+```java
+.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))
+```
+
+---
+
+## Verifying phase 5
+
+Permissions live in the database, roles live in Keycloak, and the two meet in memory.
+
+### Where the tables are, and why
+
+Each service owns the `roles`, `permissions` and `role_permissions` tables **for the
+permissions it enforces**. user-service defines `USER_*` and `PLATFORM_ADMIN`,
+cadastral-service defines `PROJECT_*` and `PAYMENT_*`, organization-service defines
+`ORGANIZATION_*`.
+
+A central authorization service reads better on a diagram and has one serious flaw: it puts a
+network dependency on the critical path of *every* authorization decision in *every* service.
+When it is down, each caller must choose between failing closed — a platform-wide outage caused
+by one component — and serving stale data it cannot verify. Local ownership removes that
+failure mode, and the mapping is versioned in the same migration history as the endpoints it
+protects, so the two cannot drift.
+
+The cost is real: "what can QURUVCHI do across the whole platform?" now means asking every
+service. That is an administrative question rather than a request-path one, and phase 7's
+service-to-service machinery is the natural way to aggregate it.
+
+There is **no `user_roles` table anywhere**. Role assignment lives in Keycloak and only in
+Keycloak; a local copy would be a second source of truth and always the stale one.
+
+### Permissions are resolved per request, not per login
+
+`KeycloakAuthoritiesConverter` expands the token's roles into permissions using an in-memory
+catalog loaded at startup and refreshed on a schedule. The whole table is a few hundred rows,
+because permissions depend on roles and never on individual users, so there is no per-user
+cache and nothing to invalidate. Two consequences worth knowing:
+
+- Granting a permission takes effect on the caller's **next request**, not their next login.
+- The token never grows as the platform gains resources, because no permission is ever a claim.
+
+### The union of roles
+
+```bash
+tok() { curl -s -d "client_id=platform-web" -d "username=$1" -d "password=password" -d "grant_type=password" http://localhost:8190/realms/platform/protocol/openid-connect/token | jq -r .access_token; }
+```
+
+| Caller | Roles | `POST /api/projects` | `POST /api/payments` |
+|---|---|---|---|
+| `ali` | QURUVCHI | **201** | 403 |
+| `bank_user` | BANK | 403 | **201** |
+| `dual` | QURUVCHI + BANK | **201** | **201** |
+| `super_admin` | SUPER_ADMIN | 403 | 403 |
+
+`dual` needs no special case anywhere in the code. Effective permissions are the set union
+across a caller's roles, with no precedence and no role containing another.
+
+The last row is the point of the design. `SUPER_ADMIN` holds no `PROJECT_*` permission, so the
+platform administrator cannot register a construction project. Roles here are sets of
+capabilities, not levels.
+
+### No role is quietly a wildcard
+
+```bash
+curl -o /dev/null -w "%{http_code}\n" -X DELETE -H "Authorization: Bearer $(tok admin_user)" http://localhost:8091/api/admin/users/00000000-0000-0000-0000-000000000001
+```
+
+| Caller | `DELETE /api/admin/users/{id}` | `GET /api/platform/audit` |
+|---|---|---|
+| `admin_user` (ADMIN) | **404** — allowed through, that id does not exist | 403 |
+| `super_admin` (SUPER_ADMIN) | **403** — refused, no `USER_DELETE` | **200** |
+
+Reading 404 as success here matters: it means the permission check passed and the handler ran.
+
+### Inspecting the live catalog
+
+`SUPER_ADMIN` can see exactly what this service enforces, without a database client:
+
+```bash
+curl -s -H "Authorization: Bearer $(tok super_admin)" http://localhost:8091/api/platform/audit | jq .rolePermissionsEnforcedHere
+```
+
+And any caller can see their own effective permissions, per service:
+
+```bash
+curl -s -H "Authorization: Bearer $(tok ali)" http://localhost:8091/api/users/me | jq '{realmRolesFromToken, effectivePermissionsHere}'
+```
+
+`effectivePermissionsHere` is empty for `ali` at user-service and non-empty at
+cadastral-service. That is not a bug: user-service defines no permission that QURUVCHI holds.
+The field name says *here* for exactly that reason.
+
+### Both annotation spellings work
+
+```java
+@PreAuthorize("@permissionChecker.has(authentication, 'PROJECT_CREATE')")
+@PreAuthorize("hasAuthority('PROJECT_CREATE')")
+```
+
+They do the same work, because permissions are already granted authorities by the time either
+runs. The named bean is kept because it says "permission" at the call site, which distinguishes
+it at a glance from the role checks, and because it is the seam where phase 6's
+organization-aware check lands without touching every annotation.
+
+**Prefer permissions to roles on business endpoints.** A role check hardcodes an organisational
+fact into code: letting another role do the same thing means editing and redeploying every
+affected endpoint. A permission check states a stable requirement, and granting it elsewhere is
+one row in a table. Roles stay for coarse gates.
+
+---
+
 ## Accounts
 
 Keycloak admin console, master realm: **admin / admin**.
@@ -276,6 +474,7 @@ real OneID identities once brokering is in place.
 | `ali` | `password` | `JISMONIY_SHAXS`, `YURIDIK_SHAXS`, `QURUVCHI` | 111111111, 222222222 |
 | `malika` | `password` | `JISMONIY_SHAXS` | none |
 | `bank_user` | `password` | `JISMONIY_SHAXS`, `BANK` | 333333333 |
+| `dual` | `password` | `JISMONIY_SHAXS`, `QURUVCHI`, `BANK` | 111111111 |
 | `admin_user` | `password` | `JISMONIY_SHAXS`, `ADMIN` | none |
 | `super_admin` | `password` | `JISMONIY_SHAXS`, `SUPER_ADMIN` | none |
 | `unverified` | `password` | `JISMONIY_SHAXS` | none, `identity_verified=false` |
