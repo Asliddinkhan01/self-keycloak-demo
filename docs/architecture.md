@@ -62,7 +62,7 @@ flowchart LR
         caddb[("cadastral_service")]
     end
 
-    vue -->|"login: redirects, code + PKCE"| keycloak
+    vue -->|"sign-in window: code + PKCE"| keycloak
     vue -->|"Bearer JWT, X-Organization-TIN"| gateway
     keycloak -.->|"front channel: browser redirect"| oneid
     keycloak -->|"back channel: code, identify, logout"| oneid
@@ -83,7 +83,7 @@ flowchart LR
 
 | Component | Port | Responsibility | Trusts | Stores |
 |---|---|---|---|---|
-| **Vue app** (`frontend`) | 5174 | Sign-in redirect, organization switcher, API calls | Keycloak for tokens | Tokens in memory only |
+| **Vue app** (`frontend`) | 5174 | Sign-in window, organization switcher, API calls | Keycloak for tokens | Tokens in memory only |
 | **Keycloak** | 8190 | Brokers OneID, issues tokens, holds roles and sessions | OneID, for identity at login | Users, roles, sessions, the PIN |
 | **OneID provider** (`oneid-identity-provider`) | inside Keycloak | Speaks OneID's protocol, maps its data, grants baseline roles | OneID | Nothing of its own |
 | **mock-oneid** | 8191 | Local stand-in for sso.egov.uz, same wire protocol | Its own client registration | Codes and tokens in memory |
@@ -102,7 +102,7 @@ Each arrow in the diagram crosses a boundary, and each boundary checks something
 
 | Boundary | What is checked | Where |
 |---|---|---|
-| Browser → Keycloak | Public client, so no secret. PKCE S256 on the code. Redirect and post-logout URIs matched against `http://localhost:5174/*`. | realm `platform-web` client |
+| Browser → Keycloak | Public client, so no secret. Sign-in in a separate window, PKCE S256 on the code. Redirect and post-logout URIs matched against `http://localhost:5174/*`. The window's answer is accepted only with the app's own `state`, the realm's `iss` and the app's ID-token `nonce`. | realm `platform-web` client, `frontend/src/keycloak.js` |
 | Keycloak ↔ OneID | Client id and secret in the form body of every back-channel call. `state` generated and verified by Keycloak. Single-use code. `ret_cd` must be `"0"` and a PIN must be present. | `OneIdIdentityProvider` |
 | Browser → gateway | CORS allows only the app's origin and the headers `Authorization`, `Content-Type` and `X-Organization-TIN`. The token needs a valid signature, issuer and expiry, and audience `platform-api`. `/internal/**` has no route. | `api-gateway` `SecurityConfig`, `application.yml` |
 | Gateway → service | The service validates the token again, against its own audience list. A request that bypasses the gateway gains nothing. | `ResourceServerSecurity` in every service |

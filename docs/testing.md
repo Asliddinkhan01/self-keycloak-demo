@@ -86,9 +86,9 @@ display names, so `target/surefire-reports` reads as this table rather than as m
 | `platform-security` | 30 | passed |
 | `oneid-identity-provider` | 23 | passed |
 | `cadastral-service`, Testcontainers PostgreSQL 18 | 2 | passed |
-| `frontend`, Vitest | 7 | passed |
+| `frontend`, Vitest | 23 | passed |
 
-89 tests in total. A plain `mvn verify` passes with the end-to-end module skipped, as on a fresh
+105 tests in total. A plain `mvn verify` passes with the end-to-end module skipped, as on a fresh
 clone. After the end-to-end run the database held no `e2e-` rows, and the realm settings the slow
 check changes for its run were back to their defaults.
 
@@ -127,7 +127,7 @@ the token.
 keycloak-js replaced by a fake that keeps the same contract, and `BroadcastChannel` replaced by an
 in-memory one with browser semantics: a message reaches the other tabs, never the sender. It checks
 that the logout URL carries `id_token_hint`, that tokens are already gone when the browser leaves,
-that other tabs are signed out, and that a refused refresh does not bounce the person to login.
+that other tabs are signed out, and that a refused refresh does not bounce the person to login. Since sign-in moved into a separate window, it also checks the popup: PKCE, `state`, `nonce` and `iss`, blocked and closed windows, a second click, tokens kept out of storage, and the callback page itself in `login-callback.test.js`.
 
 **The phase 11 regressions are pinned.** `OneIdIdentityProviderTest` fails if the OneID access
 token is ever kept on a session with OneID logout off, or if `oneid_sess_id` stops being written.
@@ -148,3 +148,9 @@ and holds `PAYMENT_CREATE`, could record a payment against **another organizatio
 sending its id. Membership was checked; ownership of the referenced record was not. The new test in
 `OrganizationContextE2ETest` fails without the fix and passes with it: the call now answers 404, and
 nothing is recorded. See the [journal](implementation-journal.md), phase 13.
+
+Sign-in later moved into a separate window. The end-to-end suite follows it: `OneIdBrowser` opens
+the same URL the window does, with `kc_idp_hint=oneid` and the callback page as redirect URI, and
+`AuthenticationE2ETest` asserts that Keycloak's own sign-in page is never shown. `LogoutE2ETest`
+checks both sides of logout the same way: before it, pressing Login returns straight to the app with
+a code, because Keycloak's session is alive; after it, the same browser is sent to OneID again.

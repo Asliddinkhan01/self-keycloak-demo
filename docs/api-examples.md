@@ -9,8 +9,9 @@ The examples use `curl` and, to pull fields out of JSON, `jq`. On Windows, run t
 
 ## Getting tokens
 
-The Vue app signs in with the authorization code flow and PKCE. For trying the API by hand, the
-development users can use the password grant, which `platform-web` allows locally:
+The Vue app signs in through a separate window, with the authorization code flow and PKCE; see
+[flows](flows.md#the-sign-in-window). For trying the API by hand, the development users can use the
+password grant, which `platform-web` allows locally:
 
 ```bash
 token() {

@@ -4,6 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static uz.platform.e2e.support.Platform.APP;
 import static uz.platform.e2e.support.Platform.DEV_USER_PASSWORD;
 import static uz.platform.e2e.support.Platform.KEYCLOAK;
+import static uz.platform.e2e.support.Platform.LOGIN_CALLBACK;
 import static uz.platform.e2e.support.Platform.REALM;
 import static uz.platform.e2e.support.Platform.secret;
 
@@ -14,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -60,13 +62,13 @@ public final class Keycloak {
         return tokens(expect(response, 200, "password grant for " + username));
     }
 
-    /** The authorization-code exchange keycloak-js performs, PKCE verifier included. */
+    /** The authorization-code exchange the app performs after the popup, PKCE verifier included. */
     public static Tokens exchangeCode(String code, String codeVerifier) {
         Response response = Http.post(TOKEN).form(Map.of(
                 "grant_type", "authorization_code",
                 "client_id", "platform-web",
                 "code", code,
-                "redirect_uri", APP,
+                "redirect_uri", LOGIN_CALLBACK,
                 "code_verifier", codeVerifier)).send();
         return tokens(expect(response, 200, "authorization code exchange"));
     }
@@ -82,14 +84,21 @@ public final class Keycloak {
         return Http.get(REALM + "/protocol/openid-connect/userinfo").bearer(accessToken).send();
     }
 
+    /**
+     * The URL the app's sign-in popup opens. {@code kc_idp_hint=oneid} makes Keycloak skip
+     * its own sign-in page and go straight to OneID.
+     */
     public static String authorizationUrl(String codeChallenge) {
         return REALM + "/protocol/openid-connect/auth?" + Http.formEncode(Map.of(
                 "client_id", "platform-web",
-                "redirect_uri", APP,
+                "redirect_uri", LOGIN_CALLBACK,
                 "response_type", "code",
+                "response_mode", "query",
                 "scope", "openid",
+                "state", UUID.randomUUID().toString(),
                 "code_challenge", codeChallenge,
-                "code_challenge_method", "S256"));
+                "code_challenge_method", "S256",
+                "kc_idp_hint", "oneid"));
     }
 
     /** The end-session URL exactly as keycloak-js builds it for logout(). */

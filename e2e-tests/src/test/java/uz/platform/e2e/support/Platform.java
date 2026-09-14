@@ -29,8 +29,10 @@ public final class Platform {
 
     /** The Vue app's origin, for CORS. */
     public static final String APP_ORIGIN = "http://localhost:" + setting("FRONTEND_PORT", "5174");
-    /** keycloak-js uses origin + "/" as both the redirect URI and the post-logout redirect URI. */
+    /** Where Keycloak sends the browser after logout. */
     public static final String APP = APP_ORIGIN + "/";
+    /** Where Keycloak sends the sign-in popup with the authorization code. */
+    public static final String LOGIN_CALLBACK = APP_ORIGIN + "/auth-callback.html";
 
     public static final String DATABASE_URL =
             "jdbc:postgresql://localhost:" + setting("POSTGRES_PORT", "5452") + "/" + setting("POSTGRES_DB", "appdb");

@@ -1,11 +1,30 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { keycloak, login, logout, onSessionEnded, realmRoles, username } from './keycloak'
+import { isAuthenticated, login, logout, onSessionEnded, realmRoles, username } from './keycloak'
 import * as api from './api'
 
-const authenticated = ref(keycloak.authenticated === true)
-const roles = computed(() => realmRoles())
+const authenticated = ref(isAuthenticated())
+const roles = computed(() => (authenticated.value ? realmRoles() : []))
 const sessionNotice = ref('')
+const signingIn = ref(false)
+const loginError = ref('')
+
+// Called straight from the click, so login() can open its window before anything
+// asynchronous happens; see keycloak.js.
+async function signIn(idpHint) {
+  loginError.value = ''
+  signingIn.value = true
+  try {
+    await login({ idpHint })
+    authenticated.value = true
+    sessionNotice.value = ''
+    await loadSession()
+  } catch (error) {
+    loginError.value = error.message
+  } finally {
+    signingIn.value = false
+  }
+}
 
 // Session bootstrap: profile, effective permissions and active organizations.
 const me = ref(null)
@@ -81,10 +100,16 @@ const statusText = computed(() => {
     <template v-if="!authenticated">
       <p v-if="sessionNotice" class="status err">{{ sessionNotice }}</p>
       <p class="hint">
-        Not signed in. Login redirects to Keycloak, which owns the login page.
-        This app renders no password field.
+        Not signed in. Login opens a separate window on OneID. After you sign in
+        there, Keycloak creates or updates your account on its server, the window
+        closes, and this page is signed in. This app never sees your OneID
+        credentials or OneID's token, and renders no password field.
       </p>
-      <button class="primary" @click="login()">Login</button>
+      <button class="primary" :disabled="signingIn" @click="signIn('oneid')">
+        {{ signingIn ? 'Signing in…' : 'Login with OneID' }}
+      </button>
+      <button :disabled="signingIn" @click="signIn(null)">Developer accounts (password)</button>
+      <p v-if="loginError" class="status err">{{ loginError }}</p>
     </template>
 
     <template v-else>

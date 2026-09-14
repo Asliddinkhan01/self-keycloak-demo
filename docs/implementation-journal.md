@@ -1206,3 +1206,37 @@ search that finds nothing proves nothing until it is shown to find something.
 
 Every example in [API examples](api-examples.md) is a real request against the Compose stack, with
 tokens redacted: 40 calls, including the refusals.
+
+### Signing in through a separate window
+
+After phase 13 was reviewed, the login was changed to how a OneID sign-in is expected to look: a
+separate window opens on OneID, the person signs in there, and the app is signed in when it closes.
+
+**What did not change is where the work happens.** OneID's code is still exchanged for OneID's
+token, the person's data still fetched with that token, and the Keycloak user still created or
+updated, all by the OneID provider inside Keycloak, on the server. A separate backend doing those
+steps was considered and set aside: it would need a service account allowed to manage Keycloak
+users, and Keycloak token exchange, a preview feature in 26.1, to turn its result into Keycloak
+tokens for the person.
+
+**What changed is the browser side**, described step by step in
+[flows](flows.md#the-sign-in-window). Four details decided the implementation:
+
+- **The window opens before any `await`.** `login()` is deliberately not an async function: a popup
+  opened after an asynchronous step is blocked as unsolicited.
+- **The answer travels over `BroadcastChannel`, not `window.opener`.** A page on the way that sends
+  `Cross-Origin-Opener-Policy` severs `window.opener`, and the login would hang. Locally neither
+  Keycloak nor the mock sends that header; OneID's production headers are unknown, so the design
+  does not depend on them.
+- **keycloak-js initialises an instance only once.** Each sign-in creates a fresh instance and hands
+  it the tokens with `init({ token, refreshToken, idToken })`. From there keycloak-js refreshes and
+  logs out exactly as before.
+- **`kc_idp_hint=oneid` takes the window past Keycloak's own sign-in page.** The development users
+  still reach it, through **Developer accounts (password)**.
+
+Probed before building: Keycloak answers the hinted request with 303 straight to its OneID broker,
+accepts `/auth-callback.html` as a redirect URI, and refuses an unregistered one with 400.
+
+Proof: 16 new frontend tests covering PKCE, `state`, `nonce`, `iss`, blocked and closed windows, a
+second click, tokens kept out of storage, and the callback page; the end-to-end suite now signs in as
+the window does. All 26 end-to-end tests pass.

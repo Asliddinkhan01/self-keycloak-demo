@@ -42,8 +42,9 @@ docker compose up -d --build
 ```
 
 The first start takes a minute or two while Keycloak imports the realm. Then open
-**http://localhost:5174**, press **Login**, choose **OneID**, pick `akarimov` on the mock's page, and
-press **Load session**.
+**http://localhost:5174** and press **Login with OneID**. A separate window opens on the mock OneID:
+pick `akarimov`. Keycloak creates or updates the account, the window closes by itself, and the app
+is signed in.
 
 To stop, keeping all data:
 
@@ -65,7 +66,8 @@ the images are built from the jars Maven produces. To run one service from your 
 
 ## Signing in
 
-**Through OneID**, on the mock's identity picker. These people exist only in the mock:
+**Login with OneID** opens a separate window on OneID; locally, that is the mock's identity picker.
+These people exist only in the mock:
 
 | Login | Shows |
 |---|---|
@@ -76,8 +78,8 @@ the images are built from the jars Maven produces. To run one service from your 
 | `broken` | OneID refusing to identify the person: the login fails with a generic message |
 | `nopin` | OneID sending no PIN: the login fails, because there is nothing stable to link on |
 
-**With a password**, as development users with business roles already granted. The password is
-`password` for all of them:
+**Developer accounts (password)** opens the same window on Keycloak's own sign-in page, for
+development users with business roles already granted. The password is `password` for all of them:
 
 | Username | Realm roles | Organizations |
 |---|---|---|

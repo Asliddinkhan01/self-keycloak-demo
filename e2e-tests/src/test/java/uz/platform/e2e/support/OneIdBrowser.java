@@ -21,11 +21,13 @@ import uz.platform.e2e.support.Http.Response;
 import uz.platform.e2e.support.Keycloak.Tokens;
 
 /**
- * One browser, signing in through Keycloak and mock OneID the way a person does.
+ * One browser window, signing in the way the app's sign-in popup does.
  *
- * <p>It follows every redirect by hand and keeps Keycloak's cookies, so it holds
- * a real Keycloak SSO session afterwards, the thing logout has to end. The only
- * shortcut is the mock's identity picker, where a person would click a name.</p>
+ * <p>It opens the same URL the popup opens, with {@code kc_idp_hint=oneid}, follows
+ * every redirect by hand, and keeps Keycloak's cookies, so it holds a real Keycloak
+ * SSO session afterwards, the thing logout has to end. It stops where the popup's
+ * callback page would take over, and redeems the code as the app window does. The
+ * only shortcut is the mock's identity picker, where a person would click a name.</p>
  */
 public final class OneIdBrowser {
 
@@ -43,8 +45,8 @@ public final class OneIdBrowser {
             Response response = get(url);
             if (response.isRedirect()) {
                 String next = URI.create(url).resolve(response.location()).toString();
-                if (next.startsWith(Platform.APP)) {
-                    visited.add("-> " + Platform.APP + " with an authorization code");
+                if (next.startsWith(Platform.LOGIN_CALLBACK)) {
+                    visited.add("-> " + Platform.LOGIN_CALLBACK + " with an authorization code");
                     return Keycloak.exchangeCode(queryParameter(next, "code"), verifier);
                 }
                 url = next;
@@ -65,9 +67,33 @@ public final class OneIdBrowser {
         return get(Keycloak.endSessionUrl(idToken));
     }
 
-    /** Press Login again in the same browser. */
-    public Response openSignIn() {
-        return get(Keycloak.authorizationUrl(challenge(Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes()))));
+    /** Where pressing Login again in the same browser ends up, following Keycloak's redirects. */
+    public record Landing(String url) {
+
+        /** Sent to OneID: the person has to authenticate again. */
+        public boolean isOneIdLoginPage() {
+            return url.startsWith(Platform.MOCK_ONEID);
+        }
+
+        /** Straight back to the app with a code: Keycloak's session let them in without OneID. */
+        public boolean isAppWithCode() {
+            return url.startsWith(Platform.LOGIN_CALLBACK) && url.contains("code=");
+        }
+    }
+
+    public Landing openSignIn() {
+        String url = Keycloak.authorizationUrl(challenge(Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes())));
+        for (int hop = 0; hop < 10; hop++) {
+            Response response = get(url);
+            if (!response.isRedirect()) {
+                return new Landing(url);
+            }
+            url = URI.create(url).resolve(response.location()).toString();
+            if (!url.startsWith(Platform.KEYCLOAK)) {
+                return new Landing(url);
+            }
+        }
+        throw new AssertionError("pressing Login again did not leave Keycloak in 10 hops:\n  " + String.join("\n  ", visited));
     }
 
     public List<String> visited() {

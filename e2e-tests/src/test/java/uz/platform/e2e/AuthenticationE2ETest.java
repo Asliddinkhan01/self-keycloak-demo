@@ -42,7 +42,11 @@ class AuthenticationE2ETest {
                 .anySatisfy(hop -> assertThat(hop).contains("/broker/oneid/login"))
                 .anySatisfy(hop -> assertThat(hop).startsWith("200 GET " + Platform.MOCK_ONEID).contains("response_type=one_code"))
                 .anySatisfy(hop -> assertThat(hop).contains("POST " + Platform.MOCK_ONEID + "/sso/oauth/select"))
-                .anySatisfy(hop -> assertThat(hop).contains("/broker/oneid/endpoint"));
+                .anySatisfy(hop -> assertThat(hop).contains("/broker/oneid/endpoint"))
+                .anySatisfy(hop -> assertThat(hop).contains(Platform.LOGIN_CALLBACK));
+        assertThat(browser.visited())
+                .as("the app's popup goes straight to OneID: Keycloak's own sign-in page is never shown")
+                .noneSatisfy(hop -> assertThat(hop).startsWith("200 GET " + Platform.REALM + "/protocol/openid-connect/auth"));
         assertThat(tokens.accessToken()).isNotBlank();
     }
 

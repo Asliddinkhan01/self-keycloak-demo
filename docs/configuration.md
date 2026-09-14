@@ -106,8 +106,9 @@ reachable only inside the private network.
 OneID and client secrets once, when the realm is first created.
 
 `FRONTEND_PORT` is also written into the realm: `platform-web`'s redirect URIs, web origins and
-post-logout redirect URIs all name `http://localhost:5174`. Changing the port means changing those
-too.
+post-logout redirect URIs all name `http://localhost:5174`. The sign-in window returns to
+`http://localhost:5174/auth-callback.html`, which the redirect URI pattern covers. Changing the port
+means changing all of those too.
 
 ### Set by `docker-compose.yml`, not in `.env`
 

@@ -21,7 +21,7 @@ ENV VITE_KEYCLOAK_URL=$VITE_KEYCLOAK_URL \
     VITE_KEYCLOAK_CLIENT_ID=$VITE_KEYCLOAK_CLIENT_ID \
     VITE_GATEWAY_URL=$VITE_GATEWAY_URL
 
-COPY index.html vite.config.js ./
+COPY index.html auth-callback.html vite.config.js ./
 COPY src ./src
 RUN npm run build
 

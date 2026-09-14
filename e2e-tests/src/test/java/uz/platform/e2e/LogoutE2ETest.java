@@ -47,6 +47,8 @@ class LogoutE2ETest {
         OneIdBrowser browser = new OneIdBrowser();
         Tokens tokens = browser.signIn("akarimov");
         assertThat(Keycloak.sessionIds(tokens.subject())).contains(tokens.sessionId());
+        assertThat(browser.openSignIn().isAppWithCode())
+                .as("while signed in, Login again returns at once: Keycloak's session is still alive").isTrue();
 
         browser.endSession(tokens.idToken());
 
@@ -54,9 +56,8 @@ class LogoutE2ETest {
         Response refresh = Keycloak.refresh(tokens.refreshToken());
         assertThat(refresh.status()).isEqualTo(400);
         assertThat(refresh.json().path("error").asText()).isEqualTo("invalid_grant");
-        Response signInAgain = browser.openSignIn();
-        assertThat(signInAgain.status()).as("the same browser is asked to sign in again").isEqualTo(200);
-        assertThat(signInAgain.body()).contains("broker/oneid/login");
+        assertThat(browser.openSignIn().isOneIdLoginPage())
+                .as("after logout, the same browser is sent to OneID to authenticate again").isTrue();
     }
 
     @Test
@@ -71,7 +72,7 @@ class LogoutE2ETest {
         assertThat(Keycloak.refresh(tokens.refreshToken()).status()).as("no new access tokens").isEqualTo(400);
         assertThat(Keycloak.isActive(tokens.accessToken())).as("Keycloak's own view of the old token").isFalse();
         assertThat(Keycloak.userinfo(tokens.accessToken()).status()).isEqualTo(401);
-        assertThat(browser.openSignIn().status()).as("no silent way back in").isEqualTo(200);
+        assertThat(browser.openSignIn().isOneIdLoginPage()).as("no silent way back in").isTrue();
 
         // What remains is a bearer token already issued, which services check offline.
         // It is bounded by its lifetime; the slow test below measures the exact end.

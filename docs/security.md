@@ -49,12 +49,17 @@ client secrets are used only by Spring's OAuth2 client, which acquires, caches a
 Nothing hand-rolls a token cache. The browser client is public and has no secret at all.
 
 **Redirect URIs.** `platform-web` accepts exactly `http://localhost:5174/*` for sign-in and
-post-logout redirects. For OneID, Keycloak's broker endpoint is built by Keycloak's own helper, so
+post-logout redirects. The sign-in window returns to `/auth-callback.html` under it; any redirect
+URI outside the pattern is refused with 400. For OneID, Keycloak's broker endpoint is built by Keycloak's own helper, so
 the value sent in the code exchange cannot drift from the one sent in the authorization request.
 Real OneID forbids `localhost`, so production needs a registered HTTPS hostname.
 
-**State.** keycloak-js generates `state` for the app's sign-in. For OneID, Keycloak generates it
-and verifies it on the way back. The provider passes it through and never implements it itself.
+**State, nonce and issuer.** For each sign-in, the app generates `state`, `nonce` and a PKCE
+verifier, and keeps all three in the app window's memory. It accepts only the callback answer
+carrying its own `state`, refuses one whose `iss` is not the realm, and refuses an ID token whose
+`nonce` is not its own. The callback page passes the code only over a `BroadcastChannel`, which is
+same-origin by definition, and removes it from its history. For OneID, Keycloak generates its own
+`state` and verifies it on the way back; the provider passes it through and never implements it.
 
 **CSRF.** The APIs are stateless and authenticate only by the `Authorization` header, which a
 browser never attaches on its own. No cookie authenticates an API call, so CSRF protection is
