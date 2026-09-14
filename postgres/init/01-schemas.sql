@@ -13,8 +13,8 @@
 --
 -- The isolation below is enforced by PostgreSQL privileges, not by convention.
 -- Each role owns exactly one schema and is never granted USAGE on the others,
--- so cadastral_service literally cannot read user_service.users. The README
--- shows the psql command that proves it.
+-- so cadastral_service literally cannot read user_service.users. The phase 1–2 section of
+-- docs/implementation-journal.md shows the psql command that proves it.
 -- ---------------------------------------------------------------------------
 
 -- ---- logins ---------------------------------------------------------------

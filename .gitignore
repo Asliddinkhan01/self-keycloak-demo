@@ -9,5 +9,3 @@ dist/
 # --- oneid-platform ---
 .env
 
-# provider jar copied into the keycloak build context
-keycloak/target-provider/

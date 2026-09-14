@@ -1,0 +1,8 @@
+# Only keycloak/Dockerfile is built with the repository root as its context,
+# and it needs exactly one file from it: the OneID provider jar.
+#
+# Everything else stays out of the build context. That keeps node_modules and
+# every target directory from being sent to Docker, and keeps .env, which holds
+# secrets, out of any image layer.
+*
+!oneid-identity-provider/target/oneid-identity-provider-*.jar

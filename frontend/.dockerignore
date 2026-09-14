@@ -1,0 +1,4 @@
+# The image runs `npm ci` itself. A host node_modules copied over it would be
+# built for the wrong platform, and dist is rebuilt inside the image.
+node_modules
+dist

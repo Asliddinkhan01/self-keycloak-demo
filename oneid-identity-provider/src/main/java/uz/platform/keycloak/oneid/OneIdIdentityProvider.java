@@ -12,11 +12,15 @@ import org.keycloak.broker.social.SocialIdentityProvider;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserSessionModel;
 import org.keycloak.services.Urls;
+import org.keycloak.sessions.AuthenticationSessionModel;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
+import jakarta.ws.rs.core.UriInfo;
 
 /**
  * Brokers OneID (sso.egov.uz) into Keycloak.
@@ -41,18 +45,29 @@ import jakarta.ws.rs.core.UriBuilder;
  *
  * <h2>What is overridden, and what is not</h2>
  *
- * <p>Exactly three things: the authorization URL, the token request, and the
- * identity fetch. Everything else is inherited — {@code state} generation and
- * verification, the callback endpoint, session creation, federated identity
- * storage, first-login detection, account linking, and token issuance.</p>
+ * <p>The protocol needs exactly three: the authorization URL, the token request,
+ * and the identity fetch. Two more handle what happens around a session: which
+ * notes Keycloak keeps on it, and {@code one_log_out} when it ends. Everything
+ * else is inherited — {@code state} generation and verification, the callback
+ * endpoint, session creation, federated identity storage, first-login detection,
+ * account linking, and token issuance.</p>
  *
- * <h2>What never leaves this class</h2>
+ * <h2>Where the OneID access token goes</h2>
  *
  * <p>The OneID access token is opaque, long-lived and can only be validated by
  * calling OneID again, against a documented ceiling of 300 requests per minute
- * for the whole client system. It is used here to fetch the identity and then
- * discarded. No microservice ever receives it; they receive a Keycloak token,
- * which they verify offline against the realm's public keys.</p>
+ * for the whole client system. It is used here to fetch the identity. No
+ * microservice ever receives it and the browser never sees it; they receive a
+ * Keycloak token, which services verify offline against the realm's public
+ * keys.</p>
+ *
+ * <p>Whether Keycloak keeps it afterwards is decided by one setting, in
+ * {@link #authenticationFinished}. {@code one_log_out} needs the token, so with
+ * {@code callOneIdLogout} on it is kept as a note on the Keycloak user session,
+ * which Keycloak 26 persists in its own database, until that session ends. With
+ * the setting off it is not kept at all. The inherited implementation kept it
+ * unconditionally; that was found by reading the stored sessions, not by any
+ * error.</p>
  *
  * <p>The PIN is used as the broker user id, so Keycloak can recognise the same
  * person on a later login, and is stored as a Keycloak attribute. It is never
@@ -76,6 +91,13 @@ public class OneIdIdentityProvider extends AbstractOAuth2IdentityProvider<OneIdI
     static final String ATTR_AUTH_METHOD = "auth_method";
     static final String ATTR_ORG_TINS = "org_tins";
     static final String ATTR_PIN = "oneid_pin";
+    static final String ATTR_PKCS_LEGAL_TIN = "pkcs_legal_tin";
+
+    /** User session note: OneID's session id, for correlating logout and audit. */
+    static final String NOTE_ONEID_SESS_ID = "oneid_sess_id";
+
+    /** Carries {@code sess_id} from the identify call to {@link #authenticationFinished}. */
+    static final String CONTEXT_ONEID_SESS_ID = "oneid.sess_id";
 
     public OneIdIdentityProvider(KeycloakSession session, OneIdIdentityProviderConfig config) {
         super(session, config);
@@ -183,7 +205,12 @@ public class OneIdIdentityProvider extends AbstractOAuth2IdentityProvider<OneIdI
         identity.setUsername(user.userId());
         identity.setFirstName(user.firstName());
         identity.setLastName(user.surName());
-        identity.setName(user.fullName());
+        // Deliberately NOT identity.setName(user.fullName()). setName splits a
+        // full name at the first space into first and last name, overwriting the
+        // two lines above. OneID's full_name is "Surname Given Patronymic", so the
+        // split stored first name "Karimov" and last name "Ali Valiyevich". This
+        // was caught by an end-to-end login, not by the compiler. OneID supplies
+        // the parts separately; use them, and never re-derive them from the whole.
         identity.setIdp(this);
 
         identity.setUserAttribute(ATTR_ONEID_USER_ID, user.userId());
@@ -208,18 +235,116 @@ public class OneIdIdentityProvider extends AbstractOAuth2IdentityProvider<OneIdI
         // A legal-entity e-signature names its organization cryptographically,
         // so that one is recorded as authoritative rather than chosen.
         if (user.pkcsLegalTin() != null && !user.pkcsLegalTin().isBlank()) {
-            identity.setUserAttribute("pkcs_legal_tin", user.pkcsLegalTin());
+            identity.setUserAttribute(ATTR_PKCS_LEGAL_TIN, user.pkcsLegalTin());
         }
 
-        // Session-scoped, for logout correlation and audit. Not an identity.
-        if (user.sessionId() != null) {
-            identity.setSessionNote("oneid_sess_id", user.sessionId());
+        // Written onto the user session in authenticationFinished, NOT with
+        // identity.setSessionNote. At this point the identity has no
+        // authentication session yet, so setSessionNote parks the note in a map
+        // that only Keycloak's token exchange ever copies onto a session; in a
+        // browser login it silently goes nowhere. Found by reading the stored
+        // sessions: zero of them carried the note.
+        if (user.sessionId() != null && !user.sessionId().isBlank()) {
+            identity.getContextData().put(CONTEXT_ONEID_SESS_ID, user.sessionId());
         }
 
         log.infof("OneID identity accepted: user_id=%s user_type=%s verified=%s legal_entities=%d",
                 user.userId(), user.userType(), user.valid(), user.legalEntityTins().size());
 
         return identity;
+    }
+
+    /**
+     * Decides what Keycloak remembers on the new user session.
+     *
+     * <p>Runs once per login, for first and returning logins alike, just before
+     * the Keycloak session is created.</p>
+     *
+     * <ul>
+     *   <li>{@code oneid_sess_id} is always kept. It identifies a OneID session,
+     *       not a person, and cannot be used to act as anyone.</li>
+     *   <li>The OneID access token is kept only when {@code one_log_out} will
+     *       need it. The inherited implementation, which this replaces, stored it
+     *       for every session regardless — a long-lived bearer credential for the
+     *       national identity system, sitting in Keycloak's session table for no
+     *       purpose.</li>
+     * </ul>
+     */
+    @Override
+    public void authenticationFinished(AuthenticationSessionModel authSession, BrokeredIdentityContext context) {
+        if (context.getContextData().get(CONTEXT_ONEID_SESS_ID) instanceof String sessId) {
+            authSession.setUserSessionNote(NOTE_ONEID_SESS_ID, sessId);
+        }
+        if (getConfig().isCallOneIdLogout()) {
+            // Stores the token under FEDERATED_ACCESS_TOKEN, where
+            // endOneIdSession reads it back.
+            super.authenticationFinished(authSession, context);
+        }
+    }
+
+    /**
+     * A browser logout: the person pressed Logout in an application.
+     *
+     * <p>Returns {@code null}, which tells Keycloak to carry on with its own
+     * logout and redirect. OneID documents no browser logout page to send the
+     * person to; {@code one_log_out} is a server-to-server call.</p>
+     */
+    @Override
+    public Response keycloakInitiatedBrowserLogout(KeycloakSession session, UserSessionModel userSession,
+                                                   UriInfo uriInfo, RealmModel realm) {
+        endOneIdSession(session, userSession);
+        return null;
+    }
+
+    /** A logout with no browser: an administrator ending the session, for example. */
+    @Override
+    public void backchannelLogout(KeycloakSession session, UserSessionModel userSession,
+                                  UriInfo uriInfo, RealmModel realm) {
+        endOneIdSession(session, userSession);
+    }
+
+    /**
+     * Calls {@code one_log_out} for the OneID token this session holds, if any.
+     *
+     * <p>Never fails the Keycloak logout. If OneID is unreachable, the Keycloak
+     * session still ends: refusing to log someone out because a third party is
+     * down would be the worse failure.</p>
+     *
+     * <p>Not called when a session merely expires. Keycloak has no hook for that,
+     * so an idle-expired session leaves its OneID session alone even with the
+     * setting on.</p>
+     */
+    private void endOneIdSession(KeycloakSession session, UserSessionModel userSession) {
+        if (!getConfig().isCallOneIdLogout()) {
+            return;
+        }
+        String accessToken = userSession.getNote(FEDERATED_ACCESS_TOKEN);
+        String sessId = userSession.getNote(NOTE_ONEID_SESS_ID);
+        if (accessToken == null) {
+            // A session from before the setting was turned on, or one whose
+            // logout already ran.
+            log.debugf("No OneID token held for sess_id=%s; one_log_out not sent", sessId);
+            return;
+        }
+        // Removed before the call, not after: one logout cannot send the token
+        // twice, and a failed call is not retried against a rate-limited service.
+        userSession.removeNote(FEDERATED_ACCESS_TOKEN);
+
+        try {
+            JsonNode response = SimpleHttp.doPost(getConfig().getTokenUrl(), session)
+                    .param(OAUTH2_PARAMETER_GRANT_TYPE, GRANT_TYPE_LOGOUT)
+                    .param(OAUTH2_PARAMETER_CLIENT_ID, getConfig().getClientId())
+                    .param(OAUTH2_PARAMETER_CLIENT_SECRET, getConfig().getClientSecret())
+                    .param(OAUTH2_PARAMETER_ACCESS_TOKEN, accessToken)
+                    .param(OAUTH2_PARAMETER_SCOPE, getConfig().getDefaultScope())
+                    .asJson();
+            String retCd = response.hasNonNull("ret_cd") ? response.get("ret_cd").asText() : "absent";
+            log.infof("OneID one_log_out for sess_id=%s: ret_cd=%s", sessId, retCd);
+        } catch (IOException | RuntimeException e) {
+            // The exception type only: a message could echo request detail.
+            log.warnf("OneID one_log_out failed for sess_id=%s (%s); the Keycloak session ends regardless",
+                    sessId, e.getClass().getSimpleName());
+        }
     }
 
     /**

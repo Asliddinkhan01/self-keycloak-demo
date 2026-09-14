@@ -33,6 +33,11 @@ public class OneIdIdentityProviderConfig extends OAuth2IdentityProviderConfig {
      * omission. The consequence is worth knowing before testing: the person stays
      * signed in at sso.egov.uz, so clicking Login again returns them without a
      * credential prompt. That looks like a broken logout and is not.</p>
+     *
+     * <p>Turning it on has a cost as well as a benefit. {@code one_log_out}
+     * needs the OneID access token, so Keycloak then keeps that token on every
+     * Keycloak session, in its own database, until the session ends. Off, the
+     * token is not kept anywhere once the identity has been fetched.</p>
      */
     public boolean isCallOneIdLogout() {
         return Boolean.parseBoolean(getConfig().getOrDefault(CALL_ONEID_LOGOUT, "false"));

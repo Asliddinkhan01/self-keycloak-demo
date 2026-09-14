@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>uz.platform</groupId>
+        <artifactId>oneid-platform</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>mock-oneid</artifactId>
+    <name>mock-oneid</name>
+    <description>Local stand-in for sso.egov.uz, speaking the documented OneID wire protocol</description>
+
+    <!--
+        A MOCK OF AN EXTERNAL SYSTEM, NOT A PLATFORM SERVICE.
+
+        It deliberately does not depend on platform-security. It is not inside
+        the platform's trust boundary and does not validate Keycloak tokens; it
+        plays the part of the national identity provider, which authenticates
+        its own clients with a client id and secret.
+
+        WHY A SERVICE AND NOT A SECOND PROVIDER CLASS
+
+        The Keycloak provider is identical in development and production; only
+        its URLs change. That means the code exercised locally is the code that
+        ships: the real redirect, the real form posts, the real JSON parsing, and
+        the real error handling. A MockOneIdProvider class swapped in for local
+        runs would test something other than what runs against sso.egov.uz,
+        which is exactly where integration bugs hide.
+    -->
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

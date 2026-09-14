@@ -1,12 +1,16 @@
 # ---------------------------------------------------------------------------
-# OneID Platform — local environment.
+# OneID Platform — the whole application, locally, with mock OneID.
 #
 #   cp .env.example .env
-#   docker compose up -d
+#   mvn -DskipTests package
+#   docker compose up -d --build
 #
-# Phase 1-2 brings up the infrastructure only: PostgreSQL and Keycloak.
-# The Spring services, mock-oneid and the Vue frontend are added in later
-# phases, each with its own service block here.
+# then open http://localhost:5174. Images are built from the jars Maven just
+# produced, so re-run `mvn package` before `--build` after changing Java code.
+#
+# Infrastructure only, to run one of the Spring services from your IDE instead:
+#
+#   docker compose up -d postgres keycloak mock-oneid
 #
 # PORTS: every published port is deliberately off its default. 5432 and 8080
 # are the two most contested ports on a developer machine, and a clash there
@@ -14,12 +18,34 @@
 # the wrong server's response instead of Keycloak's JWKS and then rejects every
 # token with a bare 401. Inside the Docker network the containers still use
 # their normal ports; only the host side differs.
+#
+# TWO NAMES FOR ONE SERVER. A browser reaches Keycloak as localhost:8190, and
+# that URL is what every token carries in "iss". A container cannot use it:
+# inside a container, localhost is the container itself. So containers talk to
+# keycloak:8080 while still requiring iss = http://localhost:8190/realms/platform.
+# The same split applies to mock OneID, and in production the two names are
+# simply the same public HTTPS host. docs/configuration.md explains each value.
 # ---------------------------------------------------------------------------
 
 # Pinned so the stack does not depend on the folder name. Without this, Compose
 # derives the project name from the directory, and renaming or moving the
 # project orphans the running containers and the data volume under the old name.
 name: oneid-platform
+
+# Settings every service that validates Keycloak tokens shares.
+x-token-validation: &token-validation
+  # What tokens say. Must match Keycloak's KC_HOSTNAME character for character.
+  KEYCLOAK_ISSUER_URI: ${KEYCLOAK_HOSTNAME_URL:-http://localhost:8190}/realms/${KEYCLOAK_REALM:-platform}
+  # Where the public signing keys are fetched from inside the network. Setting
+  # jwk-set-uri makes Spring skip issuer discovery (which would call the
+  # unreachable localhost URL) while it still validates "iss" against the value
+  # above, and still validates signature, expiry and audience.
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWKSETURI: http://keycloak:8080/realms/${KEYCLOAK_REALM:-platform}/protocol/openid-connect/certs
+
+x-database: &database
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_NAME: ${POSTGRES_DB:-appdb}
 
 services:
 
@@ -47,27 +73,29 @@ services:
       retries: 20
 
   keycloak:
-    # Built from keycloak/Dockerfile rather than pulled: the OneID provider jar
-    # has to be present when kc.sh build runs, because Keycloak scans providers
-    # at build time and not at startup.
-    #
-    # Run this first, or the build context will be empty:
-    #   mvn -pl oneid-identity-provider -am -DskipTests package
-    #   cp oneid-identity-provider/target/*.jar keycloak/target-provider/
+    # Built rather than pulled: the OneID provider jar has to be present when
+    # kc.sh build runs, because Keycloak scans providers at build time and not
+    # at startup. The context is the repository root so the jar comes straight
+    # from oneid-identity-provider/target; see keycloak/Dockerfile.
     build:
-      context: ./keycloak
+      context: .
+      dockerfile: keycloak/Dockerfile
     image: oneid-platform/keycloak:26.1
     container_name: oneid-keycloak
+    # Only needed when mock-oneid runs on the host instead of in this stack.
+    # Docker Desktop provides the name already; Linux needs this line.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # start-dev: HTTP allowed, no hostname strictness, theme caching off.
     # The DATABASE is production-shaped; the server mode is not. Production
-    # needs `kc.sh build` and `start --optimized` behind TLS.
+    # needs `start --optimized` behind TLS. See docs/security.md.
     command: ["start-dev", "--import-realm"]
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?set KEYCLOAK_ADMIN_USER in .env}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}
 
       # Without these five lines Keycloak falls back to an embedded H2 file.
       # "postgres" is the service name above; inside the Docker network it
@@ -78,34 +106,129 @@ services:
       KC_DB_PASSWORD: keycloak
       KC_DB_SCHEMA: keycloak
 
-      # Pins the public URL, and therefore the "iss" claim of every token.
+      # Pins the public URL, and therefore the "iss" claim of every token, no
+      # matter which name a request arrived on.
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME_URL:-http://localhost:8190}
       KC_HTTP_ENABLED: "true"
 
       # Read by realm-export.json when the realm is imported, so no secret is
       # ever written into a committed file.
-      USER_SERVICE_CLIENT_SECRET: ${USER_SERVICE_CLIENT_SECRET:-user-service-secret}
-      CADASTRAL_SERVICE_CLIENT_SECRET: ${CADASTRAL_SERVICE_CLIENT_SECRET:-cadastral-service-secret}
+      USER_SERVICE_CLIENT_SECRET: ${USER_SERVICE_CLIENT_SECRET:?set USER_SERVICE_CLIENT_SECRET in .env}
+      CADASTRAL_SERVICE_CLIENT_SECRET: ${CADASTRAL_SERVICE_CLIENT_SECRET:?set CADASTRAL_SERVICE_CLIENT_SECRET in .env}
 
       # ---- OneID identity provider -------------------------------------
-      # Read by realm-export.json at import time, so no credential is ever
-      # written into a committed file. Locally these point at mock-oneid,
-      # which speaks the same wire protocol; in production they point at
-      # https://sso.egov.uz/sso/oauth/Authorization.do and the client id,
-      # secret and scope issued by the operator.
-      #
-      # All three URLs are the same value on purpose: OneID uses one endpoint
-      # for authorization, token exchange, identification and logout.
-      ONEID_AUTHORIZATION_URL: ${ONEID_AUTHORIZATION_URL:-http://mock-oneid:8080/sso/oauth/Authorization.do}
-      ONEID_TOKEN_URL: ${ONEID_TOKEN_URL:-http://mock-oneid:8080/sso/oauth/Authorization.do}
-      ONEID_IDENTIFY_URL: ${ONEID_IDENTIFY_URL:-http://mock-oneid:8080/sso/oauth/Authorization.do}
-      ONEID_CLIENT_ID: ${ONEID_CLIENT_ID:-platform}
-      ONEID_CLIENT_SECRET: ${ONEID_CLIENT_SECRET:-platform-oneid-secret}
-      ONEID_SCOPE: ${ONEID_SCOPE:-platform}
+      # FRONT CHANNEL vs BACK CHANNEL. The authorization URL is where the
+      # BROWSER is redirected, so it must resolve from your machine. The token
+      # and identify URLs are called by KEYCLOAK from inside this container.
+      # In production all three are https://sso.egov.uz/sso/oauth/Authorization.do.
+      ONEID_AUTHORIZATION_URL: ${ONEID_AUTHORIZATION_URL:-http://localhost:8191/sso/oauth/Authorization.do}
+      ONEID_TOKEN_URL: ${ONEID_TOKEN_URL:-http://mock-oneid:8191/sso/oauth/Authorization.do}
+      ONEID_IDENTIFY_URL: ${ONEID_IDENTIFY_URL:-http://mock-oneid:8191/sso/oauth/Authorization.do}
+      ONEID_CLIENT_ID: ${ONEID_CLIENT_ID:?set ONEID_CLIENT_ID in .env}
+      ONEID_CLIENT_SECRET: ${ONEID_CLIENT_SECRET:?set ONEID_CLIENT_SECRET in .env}
+      ONEID_SCOPE: ${ONEID_SCOPE:?set ONEID_SCOPE in .env}
+      ONEID_CALL_LOGOUT: ${ONEID_CALL_LOGOUT:-false}
     ports:
       - "${KEYCLOAK_PORT:-8190}:8080"
     volumes:
       - ./keycloak/import:/opt/keycloak/data/import:ro
+
+  # Local stand-in for sso.egov.uz. Outside the platform's trust boundary: it
+  # plays the external national identity system and validates no tokens.
+  mock-oneid:
+    build:
+      context: ./mock-oneid
+      dockerfile: ../docker/spring-boot-app.Dockerfile
+    image: oneid-platform/mock-oneid:dev
+    container_name: oneid-mock-oneid
+    environment:
+      ONEID_CLIENT_ID: ${ONEID_CLIENT_ID:?set ONEID_CLIENT_ID in .env}
+      ONEID_CLIENT_SECRET: ${ONEID_CLIENT_SECRET:?set ONEID_CLIENT_SECRET in .env}
+      ONEID_SCOPE: ${ONEID_SCOPE:?set ONEID_SCOPE in .env}
+    ports:
+      - "${MOCK_ONEID_PORT:-8191}:8191"
+
+  organization-service:
+    build:
+      context: ./organization-service
+      dockerfile: ../docker/spring-boot-app.Dockerfile
+    image: oneid-platform/organization-service:dev
+    container_name: oneid-organization-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: [*token-validation, *database]
+    # Published for the e2e tests and for learning with curl. In production
+    # only the gateway is reachable from outside; /internal/** is never routed.
+    ports:
+      - "${ORGANIZATION_SERVICE_PORT:-8092}:8092"
+
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: ../docker/spring-boot-app.Dockerfile
+    image: oneid-platform/user-service:dev
+    container_name: oneid-user-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: [*token-validation, *database]
+      # Its own identity, for client_credentials calls to organization-service.
+      USER_SERVICE_CLIENT_SECRET: ${USER_SERVICE_CLIENT_SECRET:?set USER_SERVICE_CLIENT_SECRET in .env}
+      KEYCLOAK_TOKEN_URI: http://keycloak:8080/realms/${KEYCLOAK_REALM:-platform}/protocol/openid-connect/token
+      ORGANIZATION_SERVICE_URL: http://organization-service:8092
+    ports:
+      - "${USER_SERVICE_PORT:-8091}:8091"
+
+  cadastral-service:
+    build:
+      context: ./cadastral-service
+      dockerfile: ../docker/spring-boot-app.Dockerfile
+    image: oneid-platform/cadastral-service:dev
+    container_name: oneid-cadastral-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: [*token-validation, *database]
+      CADASTRAL_SERVICE_CLIENT_SECRET: ${CADASTRAL_SERVICE_CLIENT_SECRET:?set CADASTRAL_SERVICE_CLIENT_SECRET in .env}
+      KEYCLOAK_TOKEN_URI: http://keycloak:8080/realms/${KEYCLOAK_REALM:-platform}/protocol/openid-connect/token
+      ORGANIZATION_SERVICE_URL: http://organization-service:8092
+    ports:
+      - "${CADASTRAL_SERVICE_PORT:-8093}:8093"
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: ../docker/spring-boot-app.Dockerfile
+    image: oneid-platform/api-gateway:dev
+    container_name: oneid-api-gateway
+    environment:
+      <<: *token-validation
+      USER_SERVICE_URL: http://user-service:8091
+      ORGANIZATION_SERVICE_URL: http://organization-service:8092
+      CADASTRAL_SERVICE_URL: http://cadastral-service:8093
+      FRONTEND_ORIGIN: http://localhost:${FRONTEND_PORT:-5174}
+    ports:
+      - "${GATEWAY_PORT:-8090}:8090"
+
+  frontend:
+    build:
+      context: ./frontend
+      # Browser-facing URLs, baked into the JavaScript at build time.
+      args:
+        VITE_KEYCLOAK_URL: ${KEYCLOAK_HOSTNAME_URL:-http://localhost:8190}
+        VITE_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-platform}
+        VITE_KEYCLOAK_CLIENT_ID: platform-web
+        VITE_GATEWAY_URL: http://localhost:${GATEWAY_PORT:-8090}
+    image: oneid-platform/frontend:dev
+    container_name: oneid-frontend
+    # The port is part of the app's identity: platform-web's redirect URIs and
+    # the gateway's CORS origin both name http://localhost:5174.
+    ports:
+      - "${FRONTEND_PORT:-5174}:80"
 
 volumes:
   oneid_postgres_data:

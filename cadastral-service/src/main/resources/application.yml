@@ -9,7 +9,7 @@ spring:
   # This service owns the "cadastral_service" schema and logs in as its own
   # PostgreSQL role, which has no privileges on any other schema. A stray join
   # across a service boundary fails in the database, not in code review.
-  # Port 5452, not 5432: see the README on contested default ports.
+  # Port 5452, not 5432: see docs/configuration.md on contested default ports.
   # ---------------------------------------------------------------------------
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5452}/${DB_NAME:appdb}
@@ -42,7 +42,7 @@ spring:
   #
   # The registration below uses client_credentials: no user is involved, so the
   # token represents the SERVICE, not a person. That is the whole point — see
-  # "SUPER_ADMIN is not a service account" in the README.
+  # "Machine identities" in docs/authorization.md.
   #
   # The secret comes from the environment. Never commit one.
   # ---------------------------------------------------------------------------
@@ -52,12 +52,20 @@ spring:
         registration:
           organization-service:
             client-id: cadastral-service
-            client-secret: ${CADASTRAL_SERVICE_CLIENT_SECRET:cadastral-service-secret}
+            # No fallback value on purpose: a missing secret must stop the
+            # service at startup, not quietly use one committed to git.
+            client-secret: ${CADASTRAL_SERVICE_CLIENT_SECRET}
             authorization-grant-type: client_credentials
             provider: keycloak
         provider:
           keycloak:
-            issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8190/realms/platform}
+            # The token endpoint only, not issuer-uri. client_credentials needs
+            # nothing else, and issuer-uri would make Spring call Keycloak's
+            # discovery document at STARTUP: the service would refuse to start
+            # while Keycloak is down, and inside a container the public
+            # localhost URL is not reachable at all. docker-compose.yml sets
+            # the in-network address.
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8190/realms/platform/protocol/openid-connect/token}
 
       resourceserver:
         jwt:

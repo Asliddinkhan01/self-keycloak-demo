@@ -96,7 +96,9 @@ public class OneIdIdentityProviderFactory
                 .label("Also end the OneID session on logout")
                 .helpText("Off by default. With it off, logging out of this platform leaves the "
                         + "person signed in at sso.egov.uz, so the next login returns them without "
-                        + "a password prompt. That looks like a broken logout and is not.")
+                        + "a password prompt. That looks like a broken logout and is not. With it on, "
+                        + "Keycloak keeps the OneID access token on each session until logout, "
+                        + "because one_log_out needs it.")
                 .type(ProviderConfigProperty.BOOLEAN_TYPE)
                 .defaultValue("false")
                 .add()

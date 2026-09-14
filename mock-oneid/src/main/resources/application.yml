@@ -1,0 +1,31 @@
+server:
+  port: ${MOCK_ONEID_PORT:8191}
+
+spring:
+  application:
+    name: mock-oneid
+
+# -----------------------------------------------------------------------------
+# The client registration this mock accepts. For a real integration the OneID
+# operator issues these by email.
+#
+# Read from the same environment variables Keycloak's OneID provider is
+# configured from, so the two sides cannot drift apart. No fallback values: the
+# mock refuses to start rather than accept credentials committed to git.
+# -----------------------------------------------------------------------------
+mock-oneid:
+  client-id: ${ONEID_CLIENT_ID}
+  client-secret: ${ONEID_CLIENT_SECRET}
+  scope: ${ONEID_SCOPE}
+
+  # Exact-match allow-list, as the operator registers redirect URIs.
+  #
+  # The OneID specification FORBIDS "localhost" in redirect_uri. This mock allows
+  # it only because Keycloak runs locally; the first real integration test needs a
+  # resolvable HTTPS hostname registered with the operator instead.
+  allowed-redirect-uris:
+    - http://localhost:8190/realms/platform/broker/oneid/endpoint
+
+logging:
+  level:
+    uz.platform.mockoneid: INFO

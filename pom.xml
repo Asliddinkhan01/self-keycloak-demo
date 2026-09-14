@@ -35,11 +35,13 @@
         <module>cadastral-service</module>
         <module>api-gateway</module>
         <module>oneid-identity-provider</module>
+        <module>mock-oneid</module>
+        <!-- Phase 12. Its tests run only with -Pe2e, against the running platform. -->
+        <module>e2e-tests</module>
         <!--
             Added as each later phase lands, so that `mvn verify` always passes
             on a fresh clone rather than failing on an empty directory.
 
-            Phase 10: mock-oneid
         -->
     </modules>
 
@@ -61,6 +63,21 @@
 
     <dependencyManagement>
         <dependencies>
+            <!--
+                Imported BEFORE Spring Boot's BOM, because the first import to
+                manage an artifact wins. Boot 3.5.6 manages Testcontainers 1.21.3,
+                which speaks Docker API 1.32; current Docker engines refuse
+                anything older than 1.40 ("client version 1.32 is too old").
+                1.21.4 is the release that fixed it. Drop this once the Boot
+                version in use manages 1.21.4 or later.
+            -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>1.21.4</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
@@ -103,9 +120,54 @@
         <pluginManagement>
             <plugins>
                 <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.3</version>
+                    <configuration>
+                        <!--
+                            Reports use each test's @DisplayName, so a run reads as
+                            the list of scenarios it proves rather than as method
+                            names. target/surefire-reports is then the evidence.
+                        -->
+                        <statelessTestsetReporter implementation="org.apache.maven.plugin.surefire.extensions.junit5.JUnit5Xml30StatelessReporter">
+                            <usePhrasedFileName>false</usePhrasedFileName>
+                            <usePhrasedTestSuiteClassName>true</usePhrasedTestSuiteClassName>
+                            <usePhrasedTestCaseClassName>true</usePhrasedTestCaseClassName>
+                            <usePhrasedTestCaseMethodName>true</usePhrasedTestCaseMethodName>
+                        </statelessTestsetReporter>
+                        <consoleOutputReporter implementation="org.apache.maven.plugin.surefire.extensions.junit5.JUnit5ConsoleOutputReporter">
+                            <usePhrasedFileName>false</usePhrasedFileName>
+                        </consoleOutputReporter>
+                        <statelessTestsetInfoReporter implementation="org.apache.maven.plugin.surefire.extensions.junit5.JUnit5StatelessTestsetInfoReporter">
+                            <usePhrasedClassNameInRunning>true</usePhrasedClassNameInRunning>
+                            <usePhrasedClassNameInTestCaseSummary>true</usePhrasedClassNameInTestCaseSummary>
+                        </statelessTestsetInfoReporter>
+                    </configuration>
+                </plugin>
+                <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <version>${spring-boot.version}</version>
+                    <!--
+                        Binds repackage, which turns the plain jar into an
+                        executable one with a Main-Class and nested dependencies.
+
+                        spring-boot-starter-parent binds this for you. With an
+                        aggregator plus imported BOMs, merely declaring the plugin
+                        does NOTHING at package time: `mvn spring-boot:run` still
+                        works, which hides the problem, but `java -jar` fails with
+                        "no main manifest attribute" and so would every container
+                        image built from these jars. The same class of gap as the
+                        -parameters flag above.
+                    -->
+                    <executions>
+                        <execution>
+                            <id>repackage</id>
+                            <goals>
+                                <goal>repackage</goal>
+                            </goals>
+                        </execution>
+                    </executions>
                 </plugin>
             </plugins>
         </pluginManagement>

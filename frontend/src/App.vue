@@ -1,10 +1,11 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { keycloak, login, logout, realmRoles, username } from './keycloak'
+import { keycloak, login, logout, onSessionEnded, realmRoles, username } from './keycloak'
 import * as api from './api'
 
 const authenticated = ref(keycloak.authenticated === true)
 const roles = computed(() => realmRoles())
+const sessionNotice = ref('')
 
 // Session bootstrap: profile, effective permissions and active organizations.
 const me = ref(null)
@@ -20,6 +21,16 @@ const paymentAmount = ref('1500.00')
 const lastCall = ref('')
 const result = ref(null)
 const busy = ref(false)
+
+// However this tab's session ends, nothing that looks signed in stays on screen:
+// no profile, no acting organization, no response from a call made as that person.
+onSessionEnded(() => {
+  authenticated.value = false
+  me.value = null
+  actingTin.value = ''
+  result.value = null
+  sessionNotice.value = 'Your session has ended: signed out in this or another tab, or ended by Keycloak.'
+})
 
 async function call(label, fn) {
   busy.value = true
@@ -68,6 +79,7 @@ const statusText = computed(() => {
     <h2>Session</h2>
 
     <template v-if="!authenticated">
+      <p v-if="sessionNotice" class="status err">{{ sessionNotice }}</p>
       <p class="hint">
         Not signed in. Login redirects to Keycloak, which owns the login page.
         This app renders no password field.
@@ -93,6 +105,10 @@ const statusText = computed(() => {
       <button :disabled="busy" @click="call('GET /api/users/me/claims', api.getMyClaims)">Raw token claims</button>
       <button :disabled="busy" @click="call('GET /api/organizations/mine', api.getMyOrganizations)">My organizations</button>
       <button @click="logout()">Logout</button>
+      <p class="hint">
+        Logout ends the Keycloak session itself, not just this tab's tokens, and
+        signs out any other tab of this app too.
+      </p>
 
       <template v-if="permissions.length">
         <p class="hint" style="margin-top:.9rem">

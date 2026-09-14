@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>uz.platform</groupId>
+        <artifactId>oneid-platform</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>e2e-tests</artifactId>
+    <name>e2e-tests</name>
+    <description>The platform's test scenarios, exercised against the running system</description>
+
+    <!--
+        END TO END, AGAINST THE REAL THING.
+
+        Nothing here is mocked or started in-process. The tests act as a browser,
+        the Vue app and the services would: they sign in through Keycloak and mock
+        OneID, call the gateway, call organization-service as a service, and log
+        out. That is the only way to test the parts no in-process test reaches:
+        the Keycloak provider, the realm configuration, token signatures, and the
+        services wired together.
+
+        So the platform must be running first, and the tests are skipped unless
+        asked for:
+
+            mvn -pl e2e-tests -Pe2e test
+
+        A plain `mvn verify` on a fresh clone must pass without running services.
+        The fast tests in the other modules cover the logic; this module covers the
+        wiring. See docs/testing.md.
+    -->
+
+    <properties>
+        <skipE2e>true</skipE2e>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Only to delete the rows the tests create. Never to arrange a result. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skipTests>${skipE2e}</skipTests>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>e2e</id>
+            <properties>
+                <skipE2e>false</skipE2e>
+            </properties>
+        </profile>
+    </profiles>
+</project>
